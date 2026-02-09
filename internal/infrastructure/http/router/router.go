@@ -46,7 +46,8 @@ type Dependencies struct {
 	GatewayPipeline *gateway.Pipeline
 
 	// Repos needed for middleware
-	OrgRepo tenantRepo.OrgRepository
+	OrgRepo        tenantRepo.OrgRepository
+	WorkspaceRepo  tenantRepo.WorkspaceRepository
 }
 
 // New creates the root Chi router with all middleware and routes.
@@ -90,9 +91,10 @@ func New(deps Dependencies) *chi.Mux {
 				r.Use(middleware.JWTAuth(deps.AuthService))
 			}
 
-			// Tenant resolution middleware
+			// Tenant resolution middleware (with workspace support)
 			if deps.OrgRepo != nil {
-				r.Use(middleware.TenantResolver(deps.OrgRepo))
+				// Note: WorkspaceRepo can be nil - workspace resolution is optional
+				r.Use(middleware.TenantResolverWithWorkspace(deps.OrgRepo, deps.WorkspaceRepo))
 			}
 
 			// Gateway pipeline (rate limiting, permission enforcement for managed endpoints)
@@ -145,6 +147,15 @@ func New(deps Dependencies) *chi.Mux {
 										})
 									})
 								}
+							})
+						})
+
+						// Workspaces under organization
+						r.Route("/workspaces", func(r chi.Router) {
+							r.Post("/", deps.TenantHandler.CreateWorkspace)
+							r.Get("/", deps.TenantHandler.ListWorkspaces)
+							r.Route("/{workspaceId}", func(r chi.Router) {
+								r.Put("/", deps.TenantHandler.UpdateWorkspace)
 							})
 						})
 

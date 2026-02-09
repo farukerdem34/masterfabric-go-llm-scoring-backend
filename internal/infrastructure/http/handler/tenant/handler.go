@@ -16,11 +16,14 @@ import (
 
 // Handler provides Tenant HTTP handlers.
 type Handler struct {
-	createOrgUC    *usecase.CreateOrgUseCase
-	createAppUC    *usecase.CreateAppUseCase
-	manageKeysUC   *usecase.ManageAPIKeysUseCase
-	orgRepo        repository.OrgRepository
-	appRepo        repository.AppRepository
+	createOrgUC        *usecase.CreateOrgUseCase
+	createAppUC        *usecase.CreateAppUseCase
+	manageKeysUC       *usecase.ManageAPIKeysUseCase
+	createWorkspaceUC  *usecase.CreateWorkspaceUseCase
+	listWorkspacesUC   *usecase.ListWorkspacesUseCase
+	updateWorkspaceUC  *usecase.UpdateWorkspaceUseCase
+	orgRepo            repository.OrgRepository
+	appRepo            repository.AppRepository
 }
 
 // NewHandler creates a new Tenant handler.
@@ -28,15 +31,21 @@ func NewHandler(
 	createOrgUC *usecase.CreateOrgUseCase,
 	createAppUC *usecase.CreateAppUseCase,
 	manageKeysUC *usecase.ManageAPIKeysUseCase,
+	createWorkspaceUC *usecase.CreateWorkspaceUseCase,
+	listWorkspacesUC *usecase.ListWorkspacesUseCase,
+	updateWorkspaceUC *usecase.UpdateWorkspaceUseCase,
 	orgRepo repository.OrgRepository,
 	appRepo repository.AppRepository,
 ) *Handler {
 	return &Handler{
-		createOrgUC:  createOrgUC,
-		createAppUC:  createAppUC,
-		manageKeysUC: manageKeysUC,
-		orgRepo:      orgRepo,
-		appRepo:      appRepo,
+		createOrgUC:       createOrgUC,
+		createAppUC:       createAppUC,
+		manageKeysUC:      manageKeysUC,
+		createWorkspaceUC: createWorkspaceUC,
+		listWorkspacesUC:  listWorkspacesUC,
+		updateWorkspaceUC: updateWorkspaceUC,
+		orgRepo:           orgRepo,
+		appRepo:           appRepo,
 	}
 }
 
@@ -241,4 +250,55 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, keys)
+}
+
+// CreateWorkspace handles workspace creation.
+func (h *Handler) CreateWorkspace(w http.ResponseWriter, r *http.Request) {
+	var req dto.CreateWorkspaceRequest
+	if err := validator.DecodeAndValidate(r, &req); err != nil {
+		response.JSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	workspace, err := h.createWorkspaceUC.Execute(r.Context(), req)
+	if err != nil {
+		response.Error(w, err)
+		return
+	}
+
+	response.Created(w, workspace)
+}
+
+// ListWorkspaces lists all workspaces for the current organization.
+func (h *Handler) ListWorkspaces(w http.ResponseWriter, r *http.Request) {
+	workspaces, err := h.listWorkspacesUC.Execute(r.Context())
+	if err != nil {
+		response.Error(w, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, workspaces)
+}
+
+// UpdateWorkspace handles workspace updates.
+func (h *Handler) UpdateWorkspace(w http.ResponseWriter, r *http.Request) {
+	workspaceID, err := uuid.Parse(chi.URLParam(r, "workspaceId"))
+	if err != nil {
+		response.JSON(w, http.StatusBadRequest, map[string]string{"error": "invalid workspace id"})
+		return
+	}
+
+	var req dto.UpdateWorkspaceRequest
+	if err := validator.DecodeAndValidate(r, &req); err != nil {
+		response.JSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	workspace, err := h.updateWorkspaceUC.Execute(r.Context(), workspaceID, req)
+	if err != nil {
+		response.Error(w, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, workspace)
 }

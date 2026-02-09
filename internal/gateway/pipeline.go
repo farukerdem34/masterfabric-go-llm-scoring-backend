@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/masterfabric-go/masterfabric/internal/domain/apimanagement/repository"
+	gatewayDomain "github.com/masterfabric-go/masterfabric/internal/domain/gateway"
 	iamService "github.com/masterfabric-go/masterfabric/internal/domain/iam/service"
 	"github.com/masterfabric-go/masterfabric/internal/shared/middleware"
 	"github.com/masterfabric-go/masterfabric/internal/shared/response"
@@ -21,6 +23,7 @@ type Pipeline struct {
 	rbac         iamService.RBACService
 	redis        *redis.Client
 	logger       *slog.Logger
+	interceptors *gatewayDomain.Chain
 }
 
 // NewPipeline creates a new gateway Pipeline.
@@ -30,13 +33,19 @@ func NewPipeline(
 	rbac iamService.RBACService,
 	redisClient *redis.Client,
 	logger *slog.Logger,
+	interceptors ...gatewayDomain.Interceptor,
 ) *Pipeline {
+	var chain *gatewayDomain.Chain
+	if len(interceptors) > 0 {
+		chain = gatewayDomain.NewChain(interceptors...)
+	}
 	return &Pipeline{
 		endpointRepo: endpointRepo,
 		policyRepo:   policyRepo,
 		rbac:         rbac,
 		redis:        redisClient,
 		logger:       logger,
+		interceptors: chain,
 	}
 }
 
@@ -110,8 +119,78 @@ func (p *Pipeline) Enforce(next http.Handler) http.Handler {
 			}
 		}
 
-		next.ServeHTTP(w, r)
+		// 6. Prepare context for interceptors
+		ctx = context.WithValue(ctx, "endpoint_schema", endpoint.Schema)
+		ctx = context.WithValue(ctx, "pii_masking", endpoint.PIIMasking)
+		ctx = context.WithValue(ctx, "endpoint_id", endpoint.ID.String())
+		ctx = context.WithValue(ctx, "app_id", appID.String())
+		if orgID, ok := middleware.OrgIDFromContext(ctx); ok {
+			ctx = context.WithValue(ctx, "org_id", orgID.String())
+		}
+		if userID, ok := middleware.UserIDFromContext(ctx); ok {
+			ctx = context.WithValue(ctx, "user_id", userID.String())
+		}
+		r = r.WithContext(ctx)
+
+		// 7. Apply request interceptors
+		if p.interceptors != nil {
+			interceptedReq, err := p.interceptors.InterceptRequest(ctx, r)
+			if err != nil {
+				p.logger.Error("request interceptor failed", "error", err)
+				response.JSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				return
+			}
+			r = interceptedReq
+		}
+
+		// 8. Create response writer wrapper for interceptors
+		var respWriter http.ResponseWriter = w
+		if p.interceptors != nil {
+			respWriter = &responseWriter{
+				ResponseWriter: w,
+				statusCode:     http.StatusOK,
+				header:         make(http.Header),
+			}
+		}
+
+		next.ServeHTTP(respWriter, r)
+
+		// 9. Apply response interceptors (if needed)
+		// Note: Full response interception requires capturing the response,
+		// which is more complex. For now, we handle it in middleware or
+		// use a response wrapper.
 	})
+}
+
+// responseWriter wraps http.ResponseWriter to capture response for interceptors.
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+	header     http.Header
+	wroteHeader bool
+}
+
+func (rw *responseWriter) Header() http.Header {
+	return rw.header
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	if rw.wroteHeader {
+		return
+	}
+	rw.statusCode = code
+	rw.wroteHeader = true
+	for k, v := range rw.header {
+		rw.ResponseWriter.Header()[k] = v
+	}
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	if !rw.wroteHeader {
+		rw.WriteHeader(http.StatusOK)
+	}
+	return rw.ResponseWriter.Write(b)
 }
 
 // checkRateLimit uses a Redis sliding window counter.

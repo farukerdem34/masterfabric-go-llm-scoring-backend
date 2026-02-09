@@ -6,19 +6,26 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/masterfabric-go/masterfabric/internal/domain/tenant/repository"
+	tenantRepo "github.com/masterfabric-go/masterfabric/internal/domain/tenant/repository"
 	"github.com/masterfabric-go/masterfabric/internal/shared/logger"
 	"github.com/masterfabric-go/masterfabric/internal/shared/response"
 )
 
 const (
-	ContextKeyTenantID contextKey = "tenant_id"
-	ContextKeyAppID    contextKey = "tenant_app_id"
+	ContextKeyTenantID    contextKey = "tenant_id"
+	ContextKeyWorkspaceID contextKey = "workspace_id"
+	ContextKeyAppID       contextKey = "tenant_app_id"
 )
 
-// TenantResolver resolves the tenant (organization) from the request.
+// TenantResolver resolves the tenant (organization) and optionally workspace from the request.
 // Resolution order: X-Organization-ID header > JWT claims > subdomain.
-func TenantResolver(orgRepo repository.OrgRepository) func(http.Handler) http.Handler {
+// Workspace resolution: X-Workspace-ID header > X-Workspace-Slug header (requires org context).
+func TenantResolver(orgRepo tenantRepo.OrgRepository) func(http.Handler) http.Handler {
+	return TenantResolverWithWorkspace(orgRepo, nil)
+}
+
+// TenantResolverWithWorkspace resolves tenant and workspace from the request.
+func TenantResolverWithWorkspace(orgRepo tenantRepo.OrgRepository, workspaceRepo tenantRepo.WorkspaceRepository) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
@@ -59,6 +66,31 @@ func TenantResolver(orgRepo repository.OrgRepository) func(http.Handler) http.Ha
 			if orgID != uuid.Nil {
 				ctx = context.WithValue(ctx, ContextKeyTenantID, orgID)
 				ctx = logger.ContextWithOrganizationID(ctx, orgID.String())
+
+				// Resolve workspace if workspace repo is provided
+				var workspaceID uuid.UUID
+				if workspaceRepo != nil {
+					// 1. Check explicit header
+					if header := r.Header.Get("X-Workspace-ID"); header != "" {
+						parsed, err := uuid.Parse(header)
+						if err == nil {
+							workspaceID = parsed
+						}
+					}
+
+					// 2. Check workspace slug header (requires org context)
+					if workspaceID == uuid.Nil {
+						if slug := r.Header.Get("X-Workspace-Slug"); slug != "" {
+							if ws, err := workspaceRepo.GetBySlug(ctx, orgID, slug); err == nil && ws != nil {
+								workspaceID = ws.ID
+							}
+						}
+					}
+
+					if workspaceID != uuid.Nil {
+						ctx = context.WithValue(ctx, ContextKeyWorkspaceID, workspaceID)
+					}
+				}
 			}
 
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -80,5 +112,11 @@ func RequireTenant(next http.Handler) http.Handler {
 // TenantIDFromContext extracts the tenant ID from context.
 func TenantIDFromContext(ctx context.Context) (uuid.UUID, bool) {
 	id, ok := ctx.Value(ContextKeyTenantID).(uuid.UUID)
+	return id, ok && id != uuid.Nil
+}
+
+// WorkspaceIDFromContext extracts the workspace ID from context.
+func WorkspaceIDFromContext(ctx context.Context) (uuid.UUID, bool) {
+	id, ok := ctx.Value(ContextKeyWorkspaceID).(uuid.UUID)
 	return id, ok && id != uuid.Nil
 }

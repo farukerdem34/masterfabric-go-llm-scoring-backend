@@ -28,3 +28,12 @@ type AppUpdated struct {
 	OrganizationID uuid.UUID `json:"organization_id"`
 	Timestamp      time.Time `json:"timestamp"`
 }
+
+// WorkspaceCreated is emitted when a new workspace is created.
+type WorkspaceCreated struct {
+	WorkspaceID    uuid.UUID `json:"workspace_id"`
+	OrganizationID uuid.UUID `json:"organization_id"`
+	Name           string    `json:"name"`
+	CreatedBy      uuid.UUID `json:"created_by"`
+	Timestamp      time.Time `json:"timestamp"`
+}

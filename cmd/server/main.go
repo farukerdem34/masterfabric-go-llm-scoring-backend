@@ -33,6 +33,7 @@ import (
 
 	// Gateway
 	"github.com/masterfabric-go/masterfabric/internal/gateway"
+	gatewayInterceptors "github.com/masterfabric-go/masterfabric/internal/infrastructure/gateway/interceptors"
 
 	// Shared
 	"github.com/masterfabric-go/masterfabric/internal/shared/cache"
@@ -205,6 +206,7 @@ func buildDependencies(
 	userRepo := pgIam.NewUserRepo(db)
 	roleRepo := pgIam.NewRoleRepo(db)
 	orgRepo := pgTenant.NewOrgRepo(db)
+	workspaceRepo := pgTenant.NewWorkspaceRepository(db)
 	appRepo := pgTenant.NewAppRepo(db)
 	apiKeyRepo := pgTenant.NewAPIKeyRepo(db)
 	endpointRepo := pgApimgmt.NewEndpointRepo(db)
@@ -218,12 +220,16 @@ func buildDependencies(
 	deps.AuthService = jwtService
 	deps.RBACService = rbacService
 	deps.OrgRepo = orgRepo
+	deps.WorkspaceRepo = workspaceRepo
 
 	// --- Use cases (with event bus for domain event publishing) ---
 	registerUC := iamUC.NewRegisterUseCase(userRepo, jwtService, eventBus)
 	loginUC := iamUC.NewLoginUseCase(userRepo, jwtService)
 	assignRoleUC := iamUC.NewAssignRoleUseCase(roleRepo, rbacService, eventBus)
 	createOrgUC := tenantUC.NewCreateOrgUseCase(orgRepo, eventBus)
+	createWorkspaceUC := tenantUC.NewCreateWorkspaceUseCase(workspaceRepo, orgRepo, eventBus)
+	listWorkspacesUC := tenantUC.NewListWorkspacesUseCase(workspaceRepo)
+	updateWorkspaceUC := tenantUC.NewUpdateWorkspaceUseCase(workspaceRepo)
 	createAppUC := tenantUC.NewCreateAppUseCase(appRepo, orgRepo, eventBus)
 	manageKeysUC := tenantUC.NewManageAPIKeysUseCase(apiKeyRepo)
 	defineEndpointUC := apimgmtUC.NewDefineEndpointUseCase(endpointRepo, eventBus)
@@ -249,12 +255,37 @@ func buildDependencies(
 
 	// --- Handlers ---
 	deps.IAMHandler = iamHandler.NewHandler(registerUC, loginUC, assignRoleUC, userRepo)
-	deps.TenantHandler = tenantHandler.NewHandler(createOrgUC, createAppUC, manageKeysUC, orgRepo, appRepo)
+	deps.TenantHandler = tenantHandler.NewHandler(
+		createOrgUC,
+		createAppUC,
+		manageKeysUC,
+		createWorkspaceUC,
+		listWorkspacesUC,
+		updateWorkspaceUC,
+		orgRepo,
+		appRepo,
+	)
 	deps.APIMgmtHandler = apimgmtHandler.NewHandler(defineEndpointUC, updatePolicyUC, retireEndpointUC, endpointRepo, policyRepo)
 	deps.AuditHandler = auditHandler.NewHandler(auditRepo)
 
-	// --- Gateway pipeline ---
-	deps.GatewayPipeline = gateway.NewPipeline(endpointRepo, policyRepo, rbacService, redisClient, log)
+	// --- Gateway pipeline with interceptors ---
+	// Create interceptor chain: schema validation, PII masking, request/response transformers
+	piiMasker := gatewayInterceptors.NewPIIMasker(
+		[]string{"password", "password_hash", "api_key", "secret", "token", "ssn", "credit_card"},
+		"***",
+	)
+	schemaValidator := gatewayInterceptors.NewSchemaValidator()
+
+	// Wire interceptors into gateway pipeline
+	deps.GatewayPipeline = gateway.NewPipeline(
+		endpointRepo,
+		policyRepo,
+		rbacService,
+		redisClient,
+		log,
+		schemaValidator, // Schema validation interceptor
+		piiMasker,      // PII masking interceptor
+	)
 
 	return deps
 }
