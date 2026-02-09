@@ -1,0 +1,1401 @@
+{
+	"info": {
+		"_postman_id": "mf-go-collection-v1",
+		"name": "MasterFabric Go API",
+		"description": "Complete API collection for masterfabric-go — a multi-tenant, event-driven platform with IAM, tenant management, API management, gateway enforcement, and observability.\n\n## Quick Start\n1. Import this collection and the environment file\n2. Run **Register** then **Login** — the JWT token is auto-captured\n3. Run **Create Organization** — orgId is auto-captured\n4. Run **Create App** — appId is auto-captured\n5. Continue with API keys, endpoints, policies, and audit logs\n\n## Architecture\n- **Auth**: JWT Bearer tokens (24h expiry)\n- **Multi-Tenancy**: X-Organization-ID header or JWT claims\n- **Gateway**: X-App-ID header triggers pipeline enforcement\n- **Events**: Kafka topics per bounded context\n- **Observability**: Structured JSON logs, Prometheus /metrics",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{jwt_token}}",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global pre-request: set timestamp for audit tracing",
+					"pm.globals.set('timestamp', new Date().toISOString());",
+					"",
+					"// Sync jwt_token from environment to collection if needed",
+					"var envToken = pm.environment.get('jwt_token');",
+					"var collToken = pm.collectionVariables.get('jwt_token');",
+					"if (envToken && !collToken) {",
+					"    pm.collectionVariables.set('jwt_token', envToken);",
+					"} else if (collToken && !envToken) {",
+					"    pm.environment.set('jwt_token', collToken);",
+					"}",
+					"",
+					"// Warn if protected endpoint lacks token",
+					"var auth = pm.request.auth;",
+					"if (auth && auth.type === 'bearer') {",
+					"    var token = pm.collectionVariables.get('jwt_token') || pm.environment.get('jwt_token');",
+					"    if (!token || token === '') {",
+					"        console.warn('⚠️  JWT token missing! Run Login request first.');",
+					"    }",
+					"}"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global test: verify response time < 2s",
+					"pm.test('Response time is acceptable', function () {",
+					"    pm.expect(pm.response.responseTime).to.be.below(2000);",
+					"});",
+					"",
+					"// Global test: response has X-Request-ID",
+					"pm.test('Has X-Request-ID header', function () {",
+					"    pm.response.to.have.header('X-Request-ID');",
+					"});"
+				]
+			}
+		}
+	],
+	"variable": [
+		{ "key": "base_url", "value": "http://localhost:8080", "type": "string" },
+		{ "key": "jwt_token", "value": "", "type": "string" },
+		{ "key": "user_id", "value": "", "type": "string" },
+		{ "key": "user_email", "value": "admin@masterfabric.io", "type": "string" },
+		{ "key": "user_password", "value": "SecurePass123!", "type": "string" },
+		{ "key": "org_id", "value": "", "type": "string" },
+		{ "key": "org_slug", "value": "masterfabriccorp", "type": "string" },
+		{ "key": "app_id", "value": "", "type": "string" },
+		{ "key": "app_slug", "value": "myapp", "type": "string" },
+		{ "key": "api_key_id", "value": "", "type": "string" },
+		{ "key": "api_key_secret", "value": "", "type": "string" },
+		{ "key": "endpoint_id", "value": "", "type": "string" },
+		{ "key": "role_id", "value": "", "type": "string" },
+		{ "key": "second_user_id", "value": "", "type": "string" }
+	],
+	"item": [
+		{
+			"name": "Health & Observability",
+			"description": "Infrastructure health checks and Prometheus metrics. No authentication required.",
+			"item": [
+				{
+					"name": "Liveness Probe",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{base_url}}/health/live", "host": ["{{base_url}}"], "path": ["health", "live"] },
+						"description": "Kubernetes-compatible liveness probe. Returns 200 if the process is alive."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Body contains alive status', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.status).to.eql('alive');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Readiness Probe",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{base_url}}/health/ready", "host": ["{{base_url}}"], "path": ["health", "ready"] },
+						"description": "Readiness probe checking PostgreSQL and Redis connectivity."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Postgres is healthy', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.services.postgres).to.eql('healthy');",
+									"});",
+									"",
+									"pm.test('Redis is healthy', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.services.redis).to.eql('healthy');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Prometheus Metrics",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{base_url}}/metrics", "host": ["{{base_url}}"], "path": ["metrics"] },
+						"description": "Prometheus-compatible metrics endpoint (OpenTelemetry). Scraped by monitoring stack."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Contains Go runtime metrics', function () {",
+									"    pm.expect(pm.response.text()).to.include('go_gc_duration_seconds');",
+									"});"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Authentication (IAM)",
+			"description": "User registration and login. Login auto-captures the JWT token for subsequent requests.",
+			"item": [
+				{
+					"name": "Register User",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"{{user_email}}\",\n    \"password\": \"{{user_password}}\",\n    \"first_name\": \"Admin\",\n    \"last_name\": \"User\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/v1/auth/register", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "register"] },
+						"description": "Register a new user. Returns user info (no token — login next). Publishes `user.registered` event to Kafka topic `masterfabric.iam`."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 201 Created', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test('Response has user ID', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.id).to.be.a('string').and.not.empty;",
+									"    ",
+									"    // Save to BOTH collection and environment",
+									"    pm.collectionVariables.set('user_id', json.id);",
+									"    pm.environment.set('user_id', json.id);",
+									"    ",
+									"    console.log('✅ User ID captured: ' + json.id);",
+									"});",
+									"",
+									"pm.test('Email matches request', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.email).to.eql(pm.collectionVariables.get('user_email'));",
+									"});",
+									"",
+									"pm.test('Status is active', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.status).to.eql('active');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Register Second User",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"dev@masterfabric.io\",\n    \"password\": \"DevPass456!\",\n    \"first_name\": \"Dev\",\n    \"last_name\": \"Engineer\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/v1/auth/register", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "register"] },
+						"description": "Register a second user for testing role assignments and multi-user scenarios."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 201 Created', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test('Capture second user ID', function () {",
+									"    var json = pm.response.json();",
+									"    ",
+									"    // Save to BOTH collection and environment",
+									"    pm.collectionVariables.set('second_user_id', json.id);",
+									"    pm.environment.set('second_user_id', json.id);",
+									"    ",
+									"    console.log('✅ Second User ID captured: ' + json.id);",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Login",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"{{user_email}}\",\n    \"password\": \"{{user_password}}\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/v1/auth/login", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "login"] },
+						"description": "Authenticate and receive a JWT token (24h expiry). Token is automatically saved to `jwt_token` variable for all subsequent requests."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has JWT token', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.token).to.be.a('string').and.not.empty;",
+									"    ",
+									"    // Save token to BOTH collection and environment variables",
+									"    pm.collectionVariables.set('jwt_token', json.token);",
+									"    pm.environment.set('jwt_token', json.token);",
+									"    ",
+									"    console.log('✅ JWT token captured and saved to collection + environment');",
+									"    console.log('Token preview: ' + json.token.substring(0, 30) + '...');",
+									"});",
+									"",
+									"pm.test('Response has user info', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.user).to.be.an('object');",
+									"    pm.expect(json.user.id).to.be.a('string');",
+									"    ",
+									"    // Save user_id to BOTH collection and environment",
+									"    pm.collectionVariables.set('user_id', json.user.id);",
+									"    pm.environment.set('user_id', json.user.id);",
+									"    ",
+									"    console.log('✅ User ID captured: ' + json.user.id);",
+									"});",
+									"",
+									"pm.test('JWT is valid format (3 dot-separated parts)', function () {",
+									"    var json = pm.response.json();",
+									"    var parts = json.token.split('.');",
+									"    pm.expect(parts).to.have.lengthOf(3);",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Login (Invalid Password)",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"{{user_email}}\",\n    \"password\": \"WrongPassword!\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/v1/auth/login", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "login"] },
+						"description": "Negative test: attempt login with wrong credentials."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 401 Unauthorized', function () {",
+									"    pm.response.to.have.status(401);",
+									"});",
+									"",
+									"pm.test('Error message present', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.error).to.be.a('string');",
+									"});"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "User Management",
+			"description": "User profile and listing endpoints. Requires JWT authentication.",
+			"item": [
+				{
+					"name": "Get Current User (Me)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/me", "host": ["{{base_url}}"], "path": ["api", "v1", "me"] },
+						"description": "Returns the profile of the currently authenticated user based on the JWT token."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('User ID matches', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.id).to.eql(pm.collectionVariables.get('user_id'));",
+									"});",
+									"",
+									"pm.test('Email matches', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.email).to.eql(pm.collectionVariables.get('user_email'));",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "List Users",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/users?page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "users"],
+							"query": [
+								{ "key": "page", "value": "1", "description": "Page number (default: 1)" },
+								{ "key": "limit", "value": "20", "description": "Items per page (default: 20)" }
+							]
+						},
+						"description": "List all users with pagination support."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response is paginated', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json).to.have.property('data');",
+									"    pm.expect(json).to.have.property('pagination');",
+									"    pm.expect(json.data).to.be.an('array');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Get User by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/users/{{user_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "users", "{{user_id}}"] },
+						"description": "Retrieve a specific user by their UUID."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('User ID in response', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.id).to.eql(pm.collectionVariables.get('user_id'));",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Get User (Not Found)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/users/00000000-0000-0000-0000-000000000000", "host": ["{{base_url}}"], "path": ["api", "v1", "users", "00000000-0000-0000-0000-000000000000"] },
+						"description": "Negative test: request a non-existent user."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 404', function () {",
+									"    pm.response.to.have.status(404);",
+									"});"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Organization (Tenant) Management",
+			"description": "Multi-tenant organization CRUD. Organizations are the top-level isolation boundary.",
+			"item": [
+				{
+					"name": "Create Organization",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"MasterFabric Corp\",\n    \"slug\": \"{{org_slug}}\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/v1/organizations", "host": ["{{base_url}}"], "path": ["api", "v1", "organizations"] },
+						"description": "Create a new organization (tenant). Publishes `organization.created` event to Kafka topic `masterfabric.tenant`."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 201 Created', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test('Organization has ID', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.id).to.be.a('string').and.not.empty;",
+									"    ",
+									"    // Save to BOTH collection and environment",
+									"    pm.collectionVariables.set('org_id', json.id);",
+									"    pm.environment.set('org_id', json.id);",
+									"    ",
+									"    console.log('✅ Organization ID captured: ' + json.id);",
+									"});",
+									"",
+									"pm.test('Slug matches request', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.slug).to.eql(pm.collectionVariables.get('org_slug'));",
+									"});",
+									"",
+									"pm.test('Status is active', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.status).to.eql('active');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Create Organization (Validation Error)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"\",\n    \"slug\": \"invalid-slug!\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/v1/organizations", "host": ["{{base_url}}"], "path": ["api", "v1", "organizations"] },
+						"description": "Negative test: send invalid data to trigger validation errors."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 400 Bad Request', function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test('Error message present', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.error).to.be.a('string');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "List Organizations",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/organizations?page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "organizations"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "20" }
+							]
+						},
+						"description": "List all organizations the authenticated user has access to."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response is paginated array', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.data).to.be.an('array');",
+									"    pm.expect(json.pagination).to.be.an('object');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Get Organization by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/organizations/{{org_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "organizations", "{{org_id}}"] },
+						"description": "Retrieve a specific organization by UUID."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Org ID matches', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.id).to.eql(pm.collectionVariables.get('org_id'));",
+									"});"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Application Management",
+			"description": "Applications belong to organizations. Each app can have its own API keys and endpoint definitions.",
+			"item": [
+				{
+					"name": "Create Application",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Organization-ID", "value": "{{org_id}}", "description": "Tenant context" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"My First App\",\n    \"slug\": \"{{app_slug}}\",\n    \"sla_tier\": \"gold\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/v1/organizations/{{org_id}}/apps", "host": ["{{base_url}}"], "path": ["api", "v1", "organizations", "{{org_id}}", "apps"] },
+						"description": "Create an application under the organization. Publishes `app.created` event to Kafka topic `masterfabric.tenant`."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 201 Created', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test('App has ID', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.id).to.be.a('string').and.not.empty;",
+									"    ",
+									"    // Save to BOTH collection and environment",
+									"    pm.collectionVariables.set('app_id', json.id);",
+									"    pm.environment.set('app_id', json.id);",
+									"    ",
+									"    console.log('✅ App ID captured: ' + json.id);",
+									"});",
+									"",
+									"pm.test('App belongs to org', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.organization_id).to.eql(pm.collectionVariables.get('org_id'));",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "List Applications",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Organization-ID", "value": "{{org_id}}" }
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/organizations/{{org_id}}/apps?page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "organizations", "{{org_id}}", "apps"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "20" }
+							]
+						},
+						"description": "List all applications under the organization."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response contains apps array', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.data).to.be.an('array');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Get Application by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Organization-ID", "value": "{{org_id}}" }
+						],
+						"url": { "raw": "{{base_url}}/api/v1/organizations/{{org_id}}/apps/{{app_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "organizations", "{{org_id}}", "apps", "{{app_id}}"] },
+						"description": "Get details of a specific application."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('App ID matches', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.id).to.eql(pm.collectionVariables.get('app_id'));",
+									"});"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "API Key Management",
+			"description": "API keys for applications. Keys are used by the gateway pipeline for app-level authentication.",
+			"item": [
+				{
+					"name": "Create API Key",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Organization-ID", "value": "{{org_id}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Production Key\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/v1/organizations/{{org_id}}/apps/{{app_id}}/keys", "host": ["{{base_url}}"], "path": ["api", "v1", "organizations", "{{org_id}}", "apps", "{{app_id}}", "keys"] },
+						"description": "Generate a new API key for the application. The secret key is only returned once — store it securely."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 201 Created', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test('API key has ID and secret', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.id).to.be.a('string').and.not.empty;",
+									"    pm.expect(json.key).to.be.a('string').and.not.empty;",
+									"    ",
+									"    // Save to BOTH collection and environment",
+									"    pm.collectionVariables.set('api_key_id', json.id);",
+									"    pm.collectionVariables.set('api_key_secret', json.key);",
+									"    pm.environment.set('api_key_id', json.id);",
+									"    pm.environment.set('api_key_secret', json.key);",
+									"    ",
+									"    console.log('✅ API Key ID captured: ' + json.id);",
+									"    console.log('⚠️  WARNING: API Key secret saved (only shown once!)');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Create API Key (Staging)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Organization-ID", "value": "{{org_id}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Staging Key\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/v1/organizations/{{org_id}}/apps/{{app_id}}/keys", "host": ["{{base_url}}"], "path": ["api", "v1", "organizations", "{{org_id}}", "apps", "{{app_id}}", "keys"] },
+						"description": "Create a second API key for staging environment."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "List API Keys",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Organization-ID", "value": "{{org_id}}" }
+						],
+						"url": { "raw": "{{base_url}}/api/v1/organizations/{{org_id}}/apps/{{app_id}}/keys", "host": ["{{base_url}}"], "path": ["api", "v1", "organizations", "{{org_id}}", "apps", "{{app_id}}", "keys"] },
+						"description": "List all API keys for the application. Secrets are masked in list responses."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response is an array', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json).to.be.an('array');",
+									"    pm.expect(json.length).to.be.at.least(1);",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Revoke API Key",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{ "key": "X-Organization-ID", "value": "{{org_id}}" }
+						],
+						"url": { "raw": "{{base_url}}/api/v1/organizations/{{org_id}}/apps/{{app_id}}/keys/{{api_key_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "organizations", "{{org_id}}", "apps", "{{app_id}}", "keys", "{{api_key_id}}"] },
+						"description": "Revoke (soft-delete) an API key. The key will no longer authenticate requests through the gateway."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 204 No Content', function () {",
+									"    pm.response.to.have.status(204);",
+									"});"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Endpoint Management (API Gateway)",
+			"description": "Define, list, and manage API endpoints. Endpoints are the gateway's routing rules and policy enforcement points.",
+			"item": [
+				{
+					"name": "Define Endpoint (GET /products)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Organization-ID", "value": "{{org_id}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"method\": \"GET\",\n    \"path\": \"/products\",\n    \"version\": \"v1\",\n    \"backend_service\": \"product-service\",\n    \"backend_action\": \"ListProducts\",\n    \"audit_level\": \"basic\",\n    \"pii_masking\": false\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/v1/organizations/{{org_id}}/apps/{{app_id}}/endpoints", "host": ["{{base_url}}"], "path": ["api", "v1", "organizations", "{{org_id}}", "apps", "{{app_id}}", "endpoints"] },
+						"description": "Register a new API endpoint. Publishes `endpoint.created` event to Kafka topic `masterfabric.api-management`."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 201 Created', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test('Endpoint has ID', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.id).to.be.a('string').and.not.empty;",
+									"    ",
+									"    // Save to BOTH collection and environment",
+									"    pm.collectionVariables.set('endpoint_id', json.id);",
+									"    pm.environment.set('endpoint_id', json.id);",
+									"    ",
+									"    console.log('✅ Endpoint ID captured: ' + json.id);",
+									"});",
+									"",
+									"pm.test('Method and path match', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.method).to.eql('GET');",
+									"    pm.expect(json.path).to.eql('/products');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Define Endpoint (POST /orders)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Organization-ID", "value": "{{org_id}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"method\": \"POST\",\n    \"path\": \"/orders\",\n    \"version\": \"v1\",\n    \"backend_service\": \"order-service\",\n    \"backend_action\": \"CreateOrder\",\n    \"schema\": {\n        \"type\": \"object\",\n        \"required\": [\"product_id\", \"quantity\"],\n        \"properties\": {\n            \"product_id\": { \"type\": \"string\" },\n            \"quantity\": { \"type\": \"integer\", \"minimum\": 1 }\n        }\n    },\n    \"audit_level\": \"full\",\n    \"pii_masking\": true,\n    \"event_after\": \"order.created\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/v1/organizations/{{org_id}}/apps/{{app_id}}/endpoints", "host": ["{{base_url}}"], "path": ["api", "v1", "organizations", "{{org_id}}", "apps", "{{app_id}}", "endpoints"] },
+						"description": "Register a POST endpoint with JSON schema validation, full audit logging, PII masking, and post-event publishing."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 201 Created', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test('Schema is preserved', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.pii_masking).to.be.true;",
+									"    pm.expect(json.audit_level).to.eql('full');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "List Endpoints",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Organization-ID", "value": "{{org_id}}" }
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/organizations/{{org_id}}/apps/{{app_id}}/endpoints?page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "organizations", "{{org_id}}", "apps", "{{app_id}}", "endpoints"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "20" }
+							]
+						},
+						"description": "List all endpoints defined for the application."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has endpoints', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.data).to.be.an('array');",
+									"    pm.expect(json.data.length).to.be.at.least(1);",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Get Endpoint by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Organization-ID", "value": "{{org_id}}" }
+						],
+						"url": { "raw": "{{base_url}}/api/v1/organizations/{{org_id}}/apps/{{app_id}}/endpoints/{{endpoint_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "organizations", "{{org_id}}", "apps", "{{app_id}}", "endpoints", "{{endpoint_id}}"] },
+						"description": "Get details of a specific endpoint."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Endpoint ID matches', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.id).to.eql(pm.collectionVariables.get('endpoint_id'));",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Update Endpoint Policy",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Organization-ID", "value": "{{org_id}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"required_permission\": \"products:read\",\n    \"rate_limit\": 100,\n    \"auth_policy\": \"jwt\",\n    \"validation_policy\": {\n        \"enforce_content_type\": true,\n        \"max_body_size_kb\": 512\n    },\n    \"extra_policies\": {\n        \"cache_ttl_seconds\": 60,\n        \"retry_count\": 3\n    }\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/v1/organizations/{{org_id}}/apps/{{app_id}}/endpoints/{{endpoint_id}}/policy", "host": ["{{base_url}}"], "path": ["api", "v1", "organizations", "{{org_id}}", "apps", "{{app_id}}", "endpoints", "{{endpoint_id}}", "policy"] },
+						"description": "Set or update the policy for an endpoint. Policies control auth requirements, rate limiting, RBAC permissions, and validation rules enforced by the gateway pipeline."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Policy has rate limit', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.rate_limit).to.eql(100);",
+									"});",
+									"",
+									"pm.test('Policy has permission', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.required_permission).to.eql('products:read');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Get Endpoint Policy",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Organization-ID", "value": "{{org_id}}" }
+						],
+						"url": { "raw": "{{base_url}}/api/v1/organizations/{{org_id}}/apps/{{app_id}}/endpoints/{{endpoint_id}}/policy", "host": ["{{base_url}}"], "path": ["api", "v1", "organizations", "{{org_id}}", "apps", "{{app_id}}", "endpoints", "{{endpoint_id}}", "policy"] },
+						"description": "Retrieve the current policy configuration for an endpoint."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Policy linked to endpoint', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.endpoint_id).to.eql(pm.collectionVariables.get('endpoint_id'));",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Retire Endpoint",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "X-Organization-ID", "value": "{{org_id}}" }
+						],
+						"url": { "raw": "{{base_url}}/api/v1/organizations/{{org_id}}/apps/{{app_id}}/endpoints/{{endpoint_id}}/retire", "host": ["{{base_url}}"], "path": ["api", "v1", "organizations", "{{org_id}}", "apps", "{{app_id}}", "endpoints", "{{endpoint_id}}", "retire"] },
+						"description": "Retire (soft-disable) an endpoint. The gateway will stop routing traffic to this endpoint. Publishes `endpoint.retired` event."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 204 No Content', function () {",
+									"    pm.response.to.have.status(204);",
+									"});"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "RBAC (Role-Based Access Control)",
+			"description": "Role assignment for users within organizations/apps.",
+			"item": [
+				{
+					"name": "Assign Role to User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"user_id\": \"{{second_user_id}}\",\n    \"role_id\": \"{{role_id}}\",\n    \"organization_id\": \"{{org_id}}\",\n    \"app_id\": \"{{app_id}}\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/v1/roles/assign", "host": ["{{base_url}}"], "path": ["api", "v1", "roles", "assign"] },
+						"description": "Assign a role to a user within an organization/app scope. Publishes `role.assigned` event to Kafka topic `masterfabric.iam`.\n\nNote: You need to create a role first via the database or a seed script before using this endpoint."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 204 No Content', function () {",
+									"    pm.response.to.have.status(204);",
+									"});"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Audit Logs",
+			"description": "Query audit trail for compliance and debugging. Logs are automatically generated by the audit middleware.",
+			"item": [
+				{
+					"name": "List Audit Logs by Organization",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Organization-ID", "value": "{{org_id}}" }
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/organizations/{{org_id}}/audit-logs?page=1&limit=50",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "organizations", "{{org_id}}", "audit-logs"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "50" }
+							]
+						},
+						"description": "Retrieve audit logs for an organization. Useful for compliance reporting and security investigation."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response is paginated', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json).to.have.property('data');",
+									"    pm.expect(json).to.have.property('pagination');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "List Audit Logs by User",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/users/{{user_id}}/audit-logs?page=1&limit=50",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "users", "{{user_id}}", "audit-logs"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "50" }
+							]
+						},
+						"description": "Retrieve audit logs for a specific user across all organizations."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Error Scenarios",
+			"description": "Negative test cases to verify proper error handling and status codes.",
+			"item": [
+				{
+					"name": "Unauthorized (No Token)",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/me", "host": ["{{base_url}}"], "path": ["api", "v1", "me"] },
+						"description": "Attempt to access a protected endpoint without a JWT token."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 401 Unauthorized', function () {",
+									"    pm.response.to.have.status(401);",
+									"});",
+									"",
+									"pm.test('Error message present', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.error).to.be.a('string');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Unauthorized (Invalid Token)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "invalid.jwt.token", "type": "string" }]
+						},
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/me", "host": ["{{base_url}}"], "path": ["api", "v1", "me"] },
+						"description": "Attempt to access a protected endpoint with a malformed JWT."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 401 Unauthorized', function () {",
+									"    pm.response.to.have.status(401);",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Not Found (404)",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/nonexistent", "host": ["{{base_url}}"], "path": ["api", "v1", "nonexistent"] },
+						"description": "Request a path that doesn't exist to verify the 404 fallback handler."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 404', function () {",
+									"    pm.response.to.have.status(404);",
+									"});",
+									"",
+									"pm.test('Error body is JSON', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.error).to.eql('not found');",
+									"    pm.expect(json.code).to.eql(404);",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Validation Error (Empty Body)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{}"
+						},
+						"url": { "raw": "{{base_url}}/api/v1/auth/register", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "register"] },
+						"description": "Send an empty body to trigger validation errors."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 400 Bad Request', function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test('Validation error message', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.error).to.be.a('string');",
+									"    pm.expect(json.error.length).to.be.above(0);",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Duplicate Registration",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"{{user_email}}\",\n    \"password\": \"{{user_password}}\",\n    \"first_name\": \"Admin\",\n    \"last_name\": \"User\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/v1/auth/register", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "register"] },
+						"description": "Attempt to register with an already-used email."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status code is 409 Conflict or 400', function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([400, 409]);",
+									"});",
+									"",
+									"pm.test('Error message present', function () {",
+									"    var json = pm.response.json();",
+									"    pm.expect(json.error).to.be.a('string');",
+									"});"
+								]
+							}
+						}
+					]
+				}
+			]
+		}
+	]
+}
