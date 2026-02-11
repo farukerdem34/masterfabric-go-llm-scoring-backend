@@ -235,6 +235,7 @@ func buildDependencies(
 	defineEndpointUC := apimgmtUC.NewDefineEndpointUseCase(endpointRepo, eventBus)
 	updatePolicyUC := apimgmtUC.NewUpdatePolicyUseCase(policyRepo)
 	retireEndpointUC := apimgmtUC.NewRetireEndpointUseCase(endpointRepo, eventBus)
+	activateEndpointUC := apimgmtUC.NewActivateEndpointUseCase(endpointRepo, eventBus)
 
 	// --- Register sample Kafka consumers ---
 	// Log all IAM events
@@ -265,7 +266,7 @@ func buildDependencies(
 		orgRepo,
 		appRepo,
 	)
-	deps.APIMgmtHandler = apimgmtHandler.NewHandler(defineEndpointUC, updatePolicyUC, retireEndpointUC, endpointRepo, policyRepo)
+	deps.APIMgmtHandler = apimgmtHandler.NewHandler(defineEndpointUC, updatePolicyUC, retireEndpointUC, activateEndpointUC, endpointRepo, policyRepo)
 	deps.AuditHandler = auditHandler.NewHandler(auditRepo)
 
 	// --- Gateway pipeline with interceptors ---
@@ -276,13 +277,34 @@ func buildDependencies(
 	)
 	schemaValidator := gatewayInterceptors.NewSchemaValidator()
 
-	// Wire interceptors into gateway pipeline
+	// Create dynamic handler resolver for routing requests to backend service handlers
+	// This supports:
+	// 1. Registered handlers (if you register specific handlers)
+	// 2. HTTP proxy to external services (if backend_service is a URL or configured)
+	// 3. Generic dynamic database handler (automatically performs CRUD operations)
+	backendRegistry := gateway.NewBackendRegistry()
+	dynamicResolver := gateway.NewDynamicHandlerResolver(backendRegistry, log, db)
+	
+	// Optional: Register service configurations for HTTP proxying
+	// Example:
+	// dynamicResolver.RegisterServiceConfig("product-service", gateway.ServiceConfig{
+	//     BaseURL: "https://api.example.com/products",
+	//     Headers: map[string]string{"Authorization": "Bearer token"},
+	// })
+	
+	// Optional: Register specific handlers for services that need custom logic
+	// Example:
+	// productHandler := handlers.NewProductHandler(...)
+	// backendRegistry.Register("product-service", productHandler)
+
+	// Wire interceptors into gateway pipeline with dynamic resolver
 	deps.GatewayPipeline = gateway.NewPipeline(
 		endpointRepo,
 		policyRepo,
 		rbacService,
 		redisClient,
 		log,
+		dynamicResolver, // Dynamic handler resolver (supports registered handlers, HTTP proxy, and generic handling)
 		schemaValidator, // Schema validation interceptor
 		piiMasker,      // PII masking interceptor
 	)

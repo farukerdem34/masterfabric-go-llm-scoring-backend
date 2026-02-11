@@ -18,6 +18,7 @@ type Handler struct {
 	defineEndpointUC  *usecase.DefineEndpointUseCase
 	updatePolicyUC    *usecase.UpdatePolicyUseCase
 	retireEndpointUC  *usecase.RetireEndpointUseCase
+	activateEndpointUC *usecase.ActivateEndpointUseCase
 	endpointRepo      repository.EndpointRepository
 	policyRepo        repository.PolicyRepository
 }
@@ -27,15 +28,17 @@ func NewHandler(
 	defineEndpointUC *usecase.DefineEndpointUseCase,
 	updatePolicyUC *usecase.UpdatePolicyUseCase,
 	retireEndpointUC *usecase.RetireEndpointUseCase,
+	activateEndpointUC *usecase.ActivateEndpointUseCase,
 	endpointRepo repository.EndpointRepository,
 	policyRepo repository.PolicyRepository,
 ) *Handler {
 	return &Handler{
-		defineEndpointUC: defineEndpointUC,
-		updatePolicyUC:   updatePolicyUC,
-		retireEndpointUC: retireEndpointUC,
-		endpointRepo:     endpointRepo,
-		policyRepo:       policyRepo,
+		defineEndpointUC:  defineEndpointUC,
+		updatePolicyUC:    updatePolicyUC,
+		retireEndpointUC:  retireEndpointUC,
+		activateEndpointUC: activateEndpointUC,
+		endpointRepo:      endpointRepo,
+		policyRepo:        policyRepo,
 	}
 }
 
@@ -137,6 +140,22 @@ func (h *Handler) RetireEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.retireEndpointUC.Execute(r.Context(), id); err != nil {
+		response.Error(w, err)
+		return
+	}
+
+	response.NoContent(w)
+}
+
+// ActivateEndpoint activates a retired or inactive endpoint.
+func (h *Handler) ActivateEndpoint(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "endpointId"))
+	if err != nil {
+		response.JSON(w, http.StatusBadRequest, map[string]string{"error": "invalid endpoint id"})
+		return
+	}
+
+	if err := h.activateEndpointUC.Execute(r.Context(), id); err != nil {
 		response.Error(w, err)
 		return
 	}

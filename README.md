@@ -175,7 +175,51 @@ A complete Postman collection with **37 requests** and **auto-capturing scripts*
 5. Run **Create App** → `app_id` is auto-captured
 6. All subsequent requests use the captured variables automatically
 
-**Endpoints covered**: Health, Auth, Users, Organizations, Apps, API Keys, Endpoints, Policies, RBAC, Audit Logs, Error Scenarios.
+**Endpoints covered**: Health, Auth, Users, Organizations, Apps, API Keys, Endpoints, Policies, RBAC, Audit Logs, Error Scenarios, **Invoke Defined Endpoints**.
+
+### How to Use Defined Endpoints
+
+After defining an endpoint (e.g., `POST /orders` or `GET /products`), you can invoke it through the API gateway:
+
+**Required Headers:**
+- `X-App-ID`: Your application ID (triggers gateway pipeline)
+- `X-Organization-ID`: Your organization ID
+- `Authorization: Bearer <jwt_token>`: JWT token for authenticated requests
+
+**Example: Invoke GET /products**
+```http
+GET /api/v1/products
+Headers:
+  X-App-ID: <your-app-id>
+  X-Organization-ID: <your-org-id>
+  Authorization: Bearer <jwt-token>
+```
+
+**Example: Invoke POST /orders**
+```http
+POST /api/v1/orders
+Headers:
+  X-App-ID: <your-app-id>
+  X-Organization-ID: <your-org-id>
+  Authorization: Bearer <jwt-token>
+  Content-Type: application/json
+Body:
+  {
+    "product_id": "prod-123",
+    "quantity": 2
+  }
+```
+
+**Gateway Pipeline Flow:**
+1. Gateway checks `X-App-ID` header
+2. Looks up endpoint by method + path
+3. Validates JSON schema (if defined)
+4. Checks RBAC permissions (if policy requires)
+5. Enforces rate limits
+6. Applies interceptors (PII masking, transformations)
+7. Routes to backend service
+
+See the **"Invoke Defined Endpoints"** section in the Postman collection for complete examples including error scenarios.
 
 ## Configuration
 

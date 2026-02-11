@@ -28,3 +28,10 @@ type EndpointRetired struct {
 	AppID      uuid.UUID `json:"app_id"`
 	Timestamp  time.Time `json:"timestamp"`
 }
+
+// EndpointActivated is emitted when an endpoint is activated (reactivated from retired/inactive status).
+type EndpointActivated struct {
+	EndpointID uuid.UUID `json:"endpoint_id"`
+	AppID      uuid.UUID `json:"app_id"`
+	Timestamp  time.Time `json:"timestamp"`
+}

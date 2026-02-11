@@ -3,6 +3,7 @@ package router
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
@@ -98,6 +99,7 @@ func New(deps Dependencies) *chi.Mux {
 			}
 
 			// Gateway pipeline (rate limiting, permission enforcement for managed endpoints)
+			// Must be applied before specific routes so it can handle dynamic endpoints
 			if deps.GatewayPipeline != nil {
 				r.Use(deps.GatewayPipeline.Enforce)
 			}
@@ -142,6 +144,7 @@ func New(deps Dependencies) *chi.Mux {
 										r.Route("/{endpointId}", func(r chi.Router) {
 											r.Get("/", deps.APIMgmtHandler.GetEndpoint)
 											r.Post("/retire", deps.APIMgmtHandler.RetireEndpoint)
+											r.Post("/activate", deps.APIMgmtHandler.ActivateEndpoint)
 											r.Put("/policy", deps.APIMgmtHandler.UpdatePolicy)
 											r.Get("/policy", deps.APIMgmtHandler.GetPolicy)
 										})
@@ -171,14 +174,38 @@ func New(deps Dependencies) *chi.Mux {
 			if deps.AuditHandler != nil {
 				r.Get("/users/{userId}/audit-logs", deps.AuditHandler.ListByUser)
 			}
+
+			// Catch-all handler for managed endpoints (must be last in the group)
+			// This allows the gateway pipeline to handle dynamic endpoints like /api/v1/products
+			// The gateway middleware will validate and return responses for managed endpoints
+			r.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
+				// Gateway middleware should have already handled this if it's a managed endpoint
+				// If we reach here, it means no endpoint was found, return 404
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"error":"endpoint not found","code":404,"message":"No endpoint registered for this path. Define the endpoint first using POST /api/v1/organizations/{orgId}/apps/{appId}/endpoints"}`))
+			})
 		})
 	})
 
-	// Fallback 404
+	// Catch-all handler for managed endpoints (must be after all specific routes)
+	// This allows the gateway pipeline to handle dynamic endpoints like /api/v1/products
+	// The gateway middleware will validate and return responses for managed endpoints
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		// If this is an API v1 path, let the gateway handle it (if it hasn't already)
+		// Otherwise return 404
+		if !strings.HasPrefix(r.URL.Path, "/api/v1") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"not found","code":404}`))
+			return
+		}
+		
+		// For /api/v1 paths, check if gateway pipeline already handled it
+		// If not, return 404 (gateway would have returned response if endpoint existed)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{"error":"not found","code":404}`))
+		_, _ = w.Write([]byte(`{"error":"endpoint not found","code":404,"message":"No endpoint registered for this path. Define the endpoint first."}`))
 	})
 
 	return r

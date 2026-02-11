@@ -3,11 +3,13 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/masterfabric-go/masterfabric/internal/domain/apimanagement/model"
 	"github.com/masterfabric-go/masterfabric/internal/domain/apimanagement/repository"
 	gatewayDomain "github.com/masterfabric-go/masterfabric/internal/domain/gateway"
 	iamService "github.com/masterfabric-go/masterfabric/internal/domain/iam/service"
@@ -18,12 +20,20 @@ import (
 
 // Pipeline is the gateway policy pipeline that enforces policies on managed endpoints.
 type Pipeline struct {
-	endpointRepo repository.EndpointRepository
-	policyRepo   repository.PolicyRepository
-	rbac         iamService.RBACService
-	redis        *redis.Client
-	logger       *slog.Logger
-	interceptors *gatewayDomain.Chain
+	endpointRepo    repository.EndpointRepository
+	policyRepo      repository.PolicyRepository
+	rbac            iamService.RBACService
+	redis           *redis.Client
+	logger          *slog.Logger
+	interceptors    *gatewayDomain.Chain
+	backendRegistry HandlerResolver // Can be BackendRegistry or DynamicHandlerResolver
+}
+
+// HandlerResolver is an interface for resolving backend handlers.
+// Both BackendRegistry and DynamicHandlerResolver implement this.
+type HandlerResolver interface {
+	Handle(ctx context.Context, endpoint *model.Endpoint, req *http.Request) (*http.Response, error)
+	IsRegistered(serviceName string) bool
 }
 
 // NewPipeline creates a new gateway Pipeline.
@@ -33,19 +43,24 @@ func NewPipeline(
 	rbac iamService.RBACService,
 	redisClient *redis.Client,
 	logger *slog.Logger,
+	backendRegistry HandlerResolver,
 	interceptors ...gatewayDomain.Interceptor,
 ) *Pipeline {
 	var chain *gatewayDomain.Chain
 	if len(interceptors) > 0 {
 		chain = gatewayDomain.NewChain(interceptors...)
 	}
+	if backendRegistry == nil {
+		backendRegistry = NewBackendRegistry()
+	}
 	return &Pipeline{
-		endpointRepo: endpointRepo,
-		policyRepo:   policyRepo,
-		rbac:         rbac,
-		redis:        redisClient,
-		logger:       logger,
-		interceptors: chain,
+		endpointRepo:    endpointRepo,
+		policyRepo:      policyRepo,
+		rbac:            rbac,
+		redis:           redisClient,
+		logger:          logger,
+		interceptors:    chain,
+		backendRegistry: backendRegistry,
 	}
 }
 
@@ -75,7 +90,16 @@ func (p *Pipeline) Enforce(next http.Handler) http.Handler {
 		}
 
 		// 2. Endpoint lookup
-		endpoint, err := p.endpointRepo.GetByMethodPath(ctx, appID, r.Method, r.URL.Path, "v1")
+		// Normalize path: strip /api/v1 prefix if present to match stored endpoint paths
+		lookupPath := r.URL.Path
+		if strings.HasPrefix(lookupPath, "/api/v1") {
+			lookupPath = strings.TrimPrefix(lookupPath, "/api/v1")
+			if lookupPath == "" {
+				lookupPath = "/"
+			}
+		}
+
+		endpoint, err := p.endpointRepo.GetByMethodPath(ctx, appID, r.Method, lookupPath, "v1")
 		if err != nil {
 			// No managed endpoint found, pass through
 			next.ServeHTTP(w, r)
@@ -143,17 +167,48 @@ func (p *Pipeline) Enforce(next http.Handler) http.Handler {
 			r = interceptedReq
 		}
 
-		// 8. Create response writer wrapper for interceptors
-		var respWriter http.ResponseWriter = w
-		if p.interceptors != nil {
-			respWriter = &responseWriter{
-				ResponseWriter: w,
-				statusCode:     http.StatusOK,
-				header:         make(http.Header),
+		// 8. Route to backend handler (dynamic resolution)
+		if p.backendRegistry != nil {
+			backendResp, err := p.backendRegistry.Handle(ctx, endpoint, r)
+			if err != nil {
+				p.logger.Error("backend handler failed", "error", err, "service", endpoint.BackendService)
+				response.JSON(w, http.StatusBadGateway, map[string]string{
+					"error":   "backend service error",
+					"message": err.Error(),
+				})
+				return
+			}
+
+			if backendResp != nil {
+				defer backendResp.Body.Close()
+
+				// Copy response headers
+				for k, v := range backendResp.Header {
+					for _, val := range v {
+						w.Header().Add(k, val)
+					}
+				}
+
+				// Copy status code and body
+				w.WriteHeader(backendResp.StatusCode)
+				if backendResp.Body != nil {
+					_, _ = io.Copy(w, backendResp.Body)
+				}
+				return
 			}
 		}
 
-		next.ServeHTTP(respWriter, r)
+		// Fallback: No backend handler registered, return endpoint info
+		response.JSON(w, http.StatusOK, map[string]interface{}{
+			"message":         "Endpoint validated successfully",
+			"endpoint_id":     endpoint.ID.String(),
+			"method":          endpoint.Method,
+			"path":            endpoint.Path,
+			"backend_service": endpoint.BackendService,
+			"backend_action":  endpoint.BackendAction,
+			"note":            fmt.Sprintf("No handler found for '%s'. Register a handler or configure HTTP proxy.", endpoint.BackendService),
+		})
+		return
 
 		// 9. Apply response interceptors (if needed)
 		// Note: Full response interception requires capturing the response,
