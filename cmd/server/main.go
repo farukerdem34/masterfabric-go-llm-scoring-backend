@@ -65,6 +65,10 @@ func run() error {
 		"port", cfg.Server.Port,
 	)
 
+	if cfg.JWT.Secret == "change-me-in-production" {
+		log.Warn("JWT_SECRET is unset; authentication uses a known default value")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
