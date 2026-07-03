@@ -272,7 +272,7 @@ func (p *Pipeline) checkRateLimit(r *http.Request, appID, endpointID uuid.UUID, 
 
 // shouldSkipPipeline returns true for paths that bypass the gateway policy pipeline.
 func shouldSkipPipeline(path string) bool {
-	skipPrefixes := []string{"/health", "/api/v1/auth", "/api/v1/admin"}
+	skipPrefixes := []string{"/health", "/api/v1/auth", "/api/v1/admin", "/api/v1/ws"}
 	for _, prefix := range skipPrefixes {
 		if strings.HasPrefix(path, prefix) {
 			return true
