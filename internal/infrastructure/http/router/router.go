@@ -27,6 +27,13 @@ import (
 	tenantRepo "github.com/masterfabric-go/masterfabric/internal/domain/tenant/repository"
 )
 
+func maybeRequirePermission(rbac iamService.RBACService, permission string) func(http.Handler) http.Handler {
+	if rbac == nil {
+		return func(next http.Handler) http.Handler { return next }
+	}
+	return middleware.RequirePermission(rbac, permission)
+}
+
 // Dependencies holds all injected dependencies for the router.
 type Dependencies struct {
 	Logger *slog.Logger
@@ -106,46 +113,46 @@ func New(deps Dependencies) *chi.Mux {
 			// User routes
 			if deps.IAMHandler != nil {
 				r.Get("/me", deps.IAMHandler.GetMe)
-				r.Route("/users", func(r chi.Router) {
+				r.With(maybeRequirePermission(deps.RBACService, "user:read")).Route("/users", func(r chi.Router) {
 					r.Get("/", deps.IAMHandler.ListUsers)
 					r.Get("/{id}", deps.IAMHandler.GetUser)
 				})
-				r.Post("/roles/assign", deps.IAMHandler.AssignRole)
+				r.With(maybeRequirePermission(deps.RBACService, "user:write")).Post("/roles/assign", deps.IAMHandler.AssignRole)
 			}
 
 			// Organization routes
 			if deps.TenantHandler != nil {
 				r.Route("/organizations", func(r chi.Router) {
-					r.Post("/", deps.TenantHandler.CreateOrg)
-					r.Get("/", deps.TenantHandler.ListOrgs)
+					r.With(maybeRequirePermission(deps.RBACService, "org:write")).Post("/", deps.TenantHandler.CreateOrg)
+					r.With(maybeRequirePermission(deps.RBACService, "org:read")).Get("/", deps.TenantHandler.ListOrgs)
 					r.Route("/{orgId}", func(r chi.Router) {
-						r.Get("/", deps.TenantHandler.GetOrg)
+						r.With(maybeRequirePermission(deps.RBACService, "org:read")).Get("/", deps.TenantHandler.GetOrg)
 
 						// Apps under organization
 						r.Route("/apps", func(r chi.Router) {
-							r.Post("/", deps.TenantHandler.CreateApp)
-							r.Get("/", deps.TenantHandler.ListApps)
+							r.With(maybeRequirePermission(deps.RBACService, "app:write")).Post("/", deps.TenantHandler.CreateApp)
+							r.With(maybeRequirePermission(deps.RBACService, "app:read")).Get("/", deps.TenantHandler.ListApps)
 							r.Route("/{appId}", func(r chi.Router) {
-								r.Get("/", deps.TenantHandler.GetApp)
+								r.With(maybeRequirePermission(deps.RBACService, "app:read")).Get("/", deps.TenantHandler.GetApp)
 
 								// API keys under app
 								r.Route("/keys", func(r chi.Router) {
-									r.Post("/", deps.TenantHandler.CreateAPIKey)
-									r.Get("/", deps.TenantHandler.ListAPIKeys)
-									r.Delete("/{keyId}", deps.TenantHandler.RevokeAPIKey)
+									r.With(maybeRequirePermission(deps.RBACService, "app:write")).Post("/", deps.TenantHandler.CreateAPIKey)
+									r.With(maybeRequirePermission(deps.RBACService, "app:read")).Get("/", deps.TenantHandler.ListAPIKeys)
+									r.With(maybeRequirePermission(deps.RBACService, "app:write")).Delete("/{keyId}", deps.TenantHandler.RevokeAPIKey)
 								})
 
 								// Endpoints under app
 								if deps.APIMgmtHandler != nil {
 									r.Route("/endpoints", func(r chi.Router) {
-										r.Post("/", deps.APIMgmtHandler.DefineEndpoint)
-										r.Get("/", deps.APIMgmtHandler.ListEndpoints)
+										r.With(maybeRequirePermission(deps.RBACService, "endpoint:write")).Post("/", deps.APIMgmtHandler.DefineEndpoint)
+										r.With(maybeRequirePermission(deps.RBACService, "endpoint:read")).Get("/", deps.APIMgmtHandler.ListEndpoints)
 										r.Route("/{endpointId}", func(r chi.Router) {
-											r.Get("/", deps.APIMgmtHandler.GetEndpoint)
-											r.Post("/retire", deps.APIMgmtHandler.RetireEndpoint)
-											r.Post("/activate", deps.APIMgmtHandler.ActivateEndpoint)
-											r.Put("/policy", deps.APIMgmtHandler.UpdatePolicy)
-											r.Get("/policy", deps.APIMgmtHandler.GetPolicy)
+											r.With(maybeRequirePermission(deps.RBACService, "endpoint:read")).Get("/", deps.APIMgmtHandler.GetEndpoint)
+											r.With(maybeRequirePermission(deps.RBACService, "endpoint:write")).Post("/retire", deps.APIMgmtHandler.RetireEndpoint)
+											r.With(maybeRequirePermission(deps.RBACService, "endpoint:write")).Post("/activate", deps.APIMgmtHandler.ActivateEndpoint)
+											r.With(maybeRequirePermission(deps.RBACService, "endpoint:write")).Put("/policy", deps.APIMgmtHandler.UpdatePolicy)
+											r.With(maybeRequirePermission(deps.RBACService, "endpoint:read")).Get("/policy", deps.APIMgmtHandler.GetPolicy)
 										})
 									})
 								}
@@ -154,16 +161,16 @@ func New(deps Dependencies) *chi.Mux {
 
 						// Workspaces under organization
 						r.Route("/workspaces", func(r chi.Router) {
-							r.Post("/", deps.TenantHandler.CreateWorkspace)
-							r.Get("/", deps.TenantHandler.ListWorkspaces)
+							r.With(maybeRequirePermission(deps.RBACService, "org:write")).Post("/", deps.TenantHandler.CreateWorkspace)
+							r.With(maybeRequirePermission(deps.RBACService, "org:read")).Get("/", deps.TenantHandler.ListWorkspaces)
 							r.Route("/{workspaceId}", func(r chi.Router) {
-								r.Put("/", deps.TenantHandler.UpdateWorkspace)
+								r.With(maybeRequirePermission(deps.RBACService, "org:write")).Put("/", deps.TenantHandler.UpdateWorkspace)
 							})
 						})
 
 						// Audit logs under organization
 						if deps.AuditHandler != nil {
-							r.Get("/audit-logs", deps.AuditHandler.ListByOrg)
+							r.With(maybeRequirePermission(deps.RBACService, "org:read")).Get("/audit-logs", deps.AuditHandler.ListByOrg)
 						}
 					})
 				})
@@ -171,7 +178,7 @@ func New(deps Dependencies) *chi.Mux {
 
 			// Audit logs by user
 			if deps.AuditHandler != nil {
-				r.Get("/users/{userId}/audit-logs", deps.AuditHandler.ListByUser)
+				r.With(maybeRequirePermission(deps.RBACService, "org:read")).Get("/users/{userId}/audit-logs", deps.AuditHandler.ListByUser)
 			}
 
 			// Catch-all handler for managed endpoints (must be last in the group)

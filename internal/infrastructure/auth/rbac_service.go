@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -61,7 +62,7 @@ func (s *RBACServiceImpl) HasPermission(ctx context.Context, userID, orgID uuid.
 		return false, err
 	}
 	for _, p := range perms {
-		if p == permission {
+		if matchesPermission(p, permission) {
 			return true, nil
 		}
 	}
@@ -73,13 +74,11 @@ func (s *RBACServiceImpl) HasAnyPermission(ctx context.Context, userID, orgID uu
 	if err != nil {
 		return false, err
 	}
-	permSet := make(map[string]struct{}, len(perms))
-	for _, p := range perms {
-		permSet[p] = struct{}{}
-	}
-	for _, required := range permissions {
-		if _, ok := permSet[required]; ok {
-			return true, nil
+	for _, granted := range perms {
+		for _, required := range permissions {
+			if matchesPermission(granted, required) {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
@@ -90,4 +89,23 @@ func (s *RBACServiceImpl) InvalidateCache(ctx context.Context, userID, orgID uui
 		return s.redis.Del(ctx, s.cacheKey(userID, orgID)).Err()
 	}
 	return nil
+}
+
+func matchesPermission(granted, required string) bool {
+	if granted == required || granted == "*" {
+		return true
+	}
+
+	if strings.HasSuffix(granted, ":*") {
+		prefix := strings.TrimSuffix(granted, ":*")
+		if required == prefix || strings.HasPrefix(required, prefix+":") {
+			return true
+		}
+	}
+
+	if granted == "*:read" && strings.HasSuffix(required, ":read") {
+		return true
+	}
+
+	return false
 }
