@@ -45,6 +45,21 @@ func TestDatabaseConfig_DSN(t *testing.T) {
 	assert.Equal(t, expected, cfg.DSN())
 }
 
+func TestDatabaseConfig_DSN_EscapesSpecialCharacters(t *testing.T) {
+	cfg := DatabaseConfig{
+		Host:     "localhost",
+		Port:     5432,
+		User:     "user@domain",
+		Password: "p@ss:w?rd#",
+		DBName:   "testdb",
+		SSLMode:  "require",
+	}
+	dsn := cfg.DSN()
+	assert.Contains(t, dsn, "postgres://")
+	assert.Contains(t, dsn, "sslmode=require")
+	assert.NotContains(t, dsn, "p@ss:w?rd#")
+}
+
 func TestRedisConfig_Addr(t *testing.T) {
 	cfg := RedisConfig{Host: "redis.local", Port: 6380}
 	assert.Equal(t, "redis.local:6380", cfg.Addr())

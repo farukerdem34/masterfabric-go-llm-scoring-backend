@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -39,12 +40,16 @@ type DatabaseConfig struct {
 	MinConns int32
 }
 
-// DSN returns the PostgreSQL connection string.
+// DSN returns the PostgreSQL connection string with escaped credentials.
 func (d DatabaseConfig) DSN() string {
-	return fmt.Sprintf(
-		"postgres://%s:%s@%s:%d/%s?sslmode=%s",
-		d.User, d.Password, d.Host, d.Port, d.DBName, d.SSLMode,
-	)
+	u := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(d.User, d.Password),
+		Host:   fmt.Sprintf("%s:%d", d.Host, d.Port),
+		Path:   "/" + d.DBName,
+	}
+	u.RawQuery = url.Values{"sslmode": {d.SSLMode}}.Encode()
+	return u.String()
 }
 
 // RedisConfig holds Redis connection settings.
