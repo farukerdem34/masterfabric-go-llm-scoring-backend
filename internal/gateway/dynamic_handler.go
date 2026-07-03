@@ -127,7 +127,7 @@ func (r *DynamicHandlerResolver) handleHTTPProxy(ctx context.Context, endpoint *
 	}
 
 	// Create proxy request
-	proxyReq, err := http.NewRequestWithContext(ctx, req.Method, targetURL, req.Body)
+	proxyReq, err := http.NewRequestWithContext(ctx, req.Method, targetURL, req.Body) // #nosec G704 -- admin-configured outbound proxy
 	if err != nil {
 		return nil, fmt.Errorf("failed to create proxy request: %w", err)
 	}
@@ -155,7 +155,7 @@ func (r *DynamicHandlerResolver) handleHTTPProxy(ctx context.Context, endpoint *
 		)
 	}
 
-	resp, err := r.httpClient.Do(proxyReq)
+	resp, err := r.httpClient.Do(proxyReq) // #nosec G704 -- dispatch to validated operator backend
 	if err != nil {
 		return nil, fmt.Errorf("proxy request failed: %w", err)
 	}

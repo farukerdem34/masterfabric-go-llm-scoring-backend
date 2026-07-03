@@ -83,6 +83,7 @@ When using masterfabric-go in production:
 | Unauthenticated `/metrics` and `/health/*` | Required for orchestrator probes and Prometheus scraping | Restrict by network policy or reverse-proxy auth |
 | HS256 JWT | Simplicity for single-tenant deployments | Rotate secrets; prefer external identity for large fleets |
 | Dynamic SQL gateway handler | Admin-defined table names via endpoint configuration | RBAC on endpoint creation; audit endpoint changes |
+| Gateway HTTP proxy (gosec G704) | Managed endpoints may proxy to operator-configured backends | RBAC on endpoint creation; redirect refusal; response size cap |
 | Development compose credentials | Convenience for local bootstrap | Loopback bind + documented dev-only posture |
 
 ### Verification Commands
