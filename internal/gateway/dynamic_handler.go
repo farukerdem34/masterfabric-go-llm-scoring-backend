@@ -41,14 +41,21 @@ type ServiceConfig struct {
 	Timeout int               `json:"timeout,omitempty"`  // Request timeout in seconds
 }
 
+const maxProxyResponseBytes = 1 << 20 // 1 MiB
+
 // NewDynamicHandlerResolver creates a new dynamic handler resolver.
 func NewDynamicHandlerResolver(registry *BackendRegistry, logger *slog.Logger, db *pgxpool.Pool) *DynamicHandlerResolver {
 	if registry == nil {
 		registry = NewBackendRegistry()
 	}
 	return &DynamicHandlerResolver{
-		registry:      registry,
-		httpClient:    &http.Client{},
+		registry: registry,
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 		logger:        logger,
 		db:            db,
 		serviceConfig: make(map[string]ServiceConfig),
@@ -151,6 +158,16 @@ func (r *DynamicHandlerResolver) handleHTTPProxy(ctx context.Context, endpoint *
 	resp, err := r.httpClient.Do(proxyReq)
 	if err != nil {
 		return nil, fmt.Errorf("proxy request failed: %w", err)
+	}
+
+	if resp.Body != nil {
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxProxyResponseBytes))
+		_ = resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read proxy response: %w", readErr)
+		}
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		resp.ContentLength = int64(len(body))
 	}
 
 	return resp, nil
@@ -279,7 +296,7 @@ func (r *DynamicHandlerResolver) handleGeneric(ctx context.Context, endpoint *mo
 				"service", endpoint.BackendService,
 			)
 		}
-		return r.errorResponse(http.StatusInternalServerError, dbErr.Error()), nil
+		return r.errorResponse(http.StatusInternalServerError, "an internal error occurred"), nil
 	}
 
 	body, _ := json.Marshal(responseData)
