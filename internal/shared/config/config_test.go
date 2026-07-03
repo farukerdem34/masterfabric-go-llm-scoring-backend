@@ -32,6 +32,17 @@ func TestLoad_EnvironmentOverrides(t *testing.T) {
 	assert.Equal(t, "db.example.com", cfg.Database.Host)
 }
 
+func TestLoad_DBPoolInt32Bounds(t *testing.T) {
+	os.Setenv("DB_MAX_CONNS", "50")
+	os.Setenv("DB_MIN_CONNS", "2147483648")
+	defer os.Unsetenv("DB_MAX_CONNS")
+	defer os.Unsetenv("DB_MIN_CONNS")
+
+	cfg := Load()
+	assert.Equal(t, int32(50), cfg.Database.MaxConns)
+	assert.Equal(t, int32(5), cfg.Database.MinConns)
+}
+
 func TestDatabaseConfig_DSN(t *testing.T) {
 	cfg := DatabaseConfig{
 		Host:     "localhost",

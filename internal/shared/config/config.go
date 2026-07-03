@@ -104,8 +104,8 @@ func Load() *Config {
 			Password: envOrDefault("DB_PASSWORD", "masterfabric"),
 			DBName:   envOrDefault("DB_NAME", "masterfabric"),
 			SSLMode:  envOrDefault("DB_SSLMODE", "disable"),
-			MaxConns: int32(envOrDefaultInt("DB_MAX_CONNS", 25)),
-			MinConns: int32(envOrDefaultInt("DB_MIN_CONNS", 5)),
+			MaxConns: envOrDefaultInt32("DB_MAX_CONNS", 25),
+			MinConns: envOrDefaultInt32("DB_MIN_CONNS", 5),
 		},
 		Redis: RedisConfig{
 			Host:     envOrDefault("REDIS_HOST", "localhost"),
@@ -143,6 +143,15 @@ func envOrDefaultInt(key string, defaultVal int) int {
 	if val := os.Getenv(key); val != "" {
 		if intVal, err := strconv.Atoi(val); err == nil {
 			return intVal
+		}
+	}
+	return defaultVal
+}
+
+func envOrDefaultInt32(key string, defaultVal int32) int32 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil {
+			return int32(n)
 		}
 	}
 	return defaultVal
