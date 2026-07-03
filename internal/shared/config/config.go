@@ -21,11 +21,13 @@ type Config struct {
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Host         string
-	Port         int
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
-	IdleTimeout  time.Duration
+	Host              string
+	Port              int
+	ReadTimeout       time.Duration
+	WriteTimeout      time.Duration
+	IdleTimeout       time.Duration
+	CORSAllowedOrigins []string
+	MaxBodyBytes      int64
 }
 
 // DatabaseConfig holds PostgreSQL connection settings.
@@ -91,11 +93,13 @@ type LogConfig struct {
 func Load() *Config {
 	return &Config{
 		Server: ServerConfig{
-			Host:         envOrDefault("SERVER_HOST", "0.0.0.0"),
-			Port:         envOrDefaultInt("SERVER_PORT", 8080),
-			ReadTimeout:  time.Duration(envOrDefaultInt("SERVER_READ_TIMEOUT_SECONDS", 15)) * time.Second,
-			WriteTimeout: time.Duration(envOrDefaultInt("SERVER_WRITE_TIMEOUT_SECONDS", 15)) * time.Second,
-			IdleTimeout:  time.Duration(envOrDefaultInt("SERVER_IDLE_TIMEOUT_SECONDS", 60)) * time.Second,
+			Host:               envOrDefault("SERVER_HOST", "0.0.0.0"),
+			Port:               envOrDefaultInt("SERVER_PORT", 8080),
+			ReadTimeout:        time.Duration(envOrDefaultInt("SERVER_READ_TIMEOUT_SECONDS", 15)) * time.Second,
+			WriteTimeout:       time.Duration(envOrDefaultInt("SERVER_WRITE_TIMEOUT_SECONDS", 15)) * time.Second,
+			IdleTimeout:        time.Duration(envOrDefaultInt("SERVER_IDLE_TIMEOUT_SECONDS", 60)) * time.Second,
+			CORSAllowedOrigins: envOrDefaultSlice("CORS_ALLOWED_ORIGINS", nil),
+			MaxBodyBytes:       envOrDefaultInt64("MAX_BODY_BYTES", 1<<20),
 		},
 		Database: DatabaseConfig{
 			Host:     envOrDefault("DB_HOST", "localhost"),
@@ -152,6 +156,15 @@ func envOrDefaultInt32(key string, defaultVal int32) int32 {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 32); err == nil {
 			return int32(n)
+		}
+	}
+	return defaultVal
+}
+
+func envOrDefaultInt64(key string, defaultVal int64) int64 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return n
 		}
 	}
 	return defaultVal

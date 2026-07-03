@@ -33,6 +33,9 @@ type Dependencies struct {
 	DB     *pgxpool.Pool
 	Redis  *redis.Client
 
+	CORSAllowedOrigins []string
+	MaxBodyBytes       int64
+
 	// Services
 	AuthService iamService.AuthService
 	RBACService iamService.RBACService
@@ -59,14 +62,10 @@ func New(deps Dependencies) *chi.Mux {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logging(deps.Logger))
 	r.Use(middleware.Recoverer(deps.Logger))
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID", "X-Organization-ID", "X-App-ID"},
-		ExposedHeaders:   []string{"X-Request-ID"},
-		AllowCredentials: true,
-		MaxAge:           300,
-	}))
+	if deps.MaxBodyBytes > 0 {
+		r.Use(middleware.MaxBodyBytes(deps.MaxBodyBytes))
+	}
+	r.Use(cors.Handler(middleware.CORSOptions(deps.CORSAllowedOrigins)))
 
 	// Health endpoints
 	healthHandler := health.NewHandler(deps.DB, deps.Redis)

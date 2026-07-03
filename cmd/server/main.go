@@ -192,9 +192,11 @@ func buildDependencies(
 	eventBus events.EventBus,
 ) router.Dependencies {
 	deps := router.Dependencies{
-		Logger: log,
-		DB:     db,
-		Redis:  redisClient,
+		Logger:             log,
+		DB:                 db,
+		Redis:              redisClient,
+		CORSAllowedOrigins: cfg.Server.CORSAllowedOrigins,
+		MaxBodyBytes:       cfg.Server.MaxBodyBytes,
 	}
 
 	if db == nil {
