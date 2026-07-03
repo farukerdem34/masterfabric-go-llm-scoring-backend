@@ -2,6 +2,8 @@
 package health
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -11,8 +13,16 @@ import (
 
 // Handler provides health check endpoints.
 type Handler struct {
-	db    *pgxpool.Pool
-	redis *redis.Client
+	db    dbPinger
+	redis redisPinger
+}
+
+type dbPinger interface {
+	Ping(ctx context.Context) error
+}
+
+type redisPinger interface {
+	Ping(ctx context.Context) *redis.StatusCmd
 }
 
 // NewHandler creates a new health handler.
@@ -40,7 +50,8 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 	// Check Postgres
 	if h.db != nil {
 		if err := h.db.Ping(ctx); err != nil {
-			services["postgres"] = "unhealthy: " + err.Error()
+			slog.Error("readiness check failed", "service", "postgres", "error", err)
+			services["postgres"] = "unhealthy"
 			healthy = false
 		} else {
 			services["postgres"] = "healthy"
@@ -50,7 +61,8 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 	// Check Redis
 	if h.redis != nil {
 		if err := h.redis.Ping(ctx).Err(); err != nil {
-			services["redis"] = "unhealthy: " + err.Error()
+			slog.Error("readiness check failed", "service", "redis", "error", err)
+			services["redis"] = "unhealthy"
 			healthy = false
 		} else {
 			services["redis"] = "healthy"

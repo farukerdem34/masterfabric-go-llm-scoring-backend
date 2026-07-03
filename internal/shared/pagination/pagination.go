@@ -9,6 +9,7 @@ const (
 	DefaultPage    = 1
 	DefaultPerPage = 20
 	MaxPerPage     = 100
+	MaxPage        = 1_000_000
 )
 
 // Params holds pagination parameters.
@@ -58,6 +59,9 @@ func FromRequest(r *http.Request) Params {
 
 	if page < 1 {
 		page = DefaultPage
+	}
+	if page > MaxPage {
+		page = MaxPage
 	}
 	if perPage < 1 {
 		perPage = DefaultPerPage

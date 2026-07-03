@@ -1,3 +1,6 @@
+# Local development stack only.
+# SECURITY: default credentials are weak; change them before any shared network use.
+# Database and cache ports bind to loopback by default (override via *_HOST_BIND env vars).
 services:
   postgres:
     image: postgres:16-alpine
@@ -7,7 +10,7 @@ services:
       POSTGRES_PASSWORD: masterfabric
       POSTGRES_DB: masterfabric
     ports:
-      - "5432:5432"
+      - "${DB_HOST_BIND:-127.0.0.1}:${DB_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +23,7 @@ services:
     image: redis:7-alpine
     container_name: masterfabric-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_HOST_BIND:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -33,7 +36,7 @@ services:
     image: apache/kafka:latest
     container_name: masterfabric-kafka
     ports:
-      - "9092:9092"
+      - "${KAFKA_HOST_BIND:-127.0.0.1}:${KAFKA_PORT:-9092}:9092"
     environment:
       # KRaft single-node setup
       KAFKA_NODE_ID: 1
@@ -63,7 +66,7 @@ services:
     image: provectuslabs/kafka-ui:latest
     container_name: masterfabric-kafka-ui
     ports:
-      - "8090:8080"
+      - "${KAFKA_UI_HOST_BIND:-127.0.0.1}:8090:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: masterfabric
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092

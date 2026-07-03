@@ -10,6 +10,7 @@ import (
 	"github.com/masterfabric-go/masterfabric/internal/domain/tenant/model"
 	domainErr "github.com/masterfabric-go/masterfabric/internal/shared/errors"
 	"github.com/masterfabric-go/masterfabric/internal/shared/events"
+	"github.com/masterfabric-go/masterfabric/internal/shared/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -120,8 +121,8 @@ func TestCreateWorkspaceUseCase_Execute_Success(t *testing.T) {
 
 	uc := NewCreateWorkspaceUseCase(workspaceRepo, orgRepo, eventBus)
 
-	ctx := context.WithValue(context.Background(), "org_id", orgID)
-	ctx = context.WithValue(ctx, "user_id", userID)
+	ctx := context.WithValue(context.Background(), middleware.ContextKeyOrganizationID, orgID)
+	ctx = context.WithValue(ctx, middleware.ContextKeyUserID, userID)
 
 	req := dto.CreateWorkspaceRequest{
 		Name:        "Test Workspace",
@@ -160,7 +161,7 @@ func TestCreateWorkspaceUseCase_Execute_SlugAlreadyTaken(t *testing.T) {
 
 	uc := NewCreateWorkspaceUseCase(workspaceRepo, orgRepo, eventBus)
 
-	ctx := context.WithValue(context.Background(), "org_id", orgID)
+	ctx := context.WithValue(context.Background(), middleware.ContextKeyOrganizationID, orgID)
 
 	req := dto.CreateWorkspaceRequest{
 		Name: "Test Workspace",
@@ -185,7 +186,7 @@ func TestCreateWorkspaceUseCase_Execute_OrgNotFound(t *testing.T) {
 
 	uc := NewCreateWorkspaceUseCase(workspaceRepo, orgRepo, eventBus)
 
-	ctx := context.WithValue(context.Background(), "org_id", orgID)
+	ctx := context.WithValue(context.Background(), middleware.ContextKeyOrganizationID, orgID)
 
 	req := dto.CreateWorkspaceRequest{
 		Name: "Test Workspace",

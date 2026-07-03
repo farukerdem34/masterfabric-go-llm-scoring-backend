@@ -63,6 +63,10 @@ case "${1:-}" in
             exit 1
         fi
         name="${2}"
+        if [[ ! "$name" =~ ^[a-zA-Z0-9_]+$ ]]; then
+            echo "❌ Migration name may only contain letters, numbers, and underscores"
+            exit 1
+        fi
         timestamp=$(date +%Y%m%d%H%M%S)
         filename="${MIGRATION_DIR}/${timestamp}_${name}.sql"
         cat > "$filename" <<EOF

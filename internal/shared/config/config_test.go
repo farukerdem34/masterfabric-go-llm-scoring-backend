@@ -32,6 +32,17 @@ func TestLoad_EnvironmentOverrides(t *testing.T) {
 	assert.Equal(t, "db.example.com", cfg.Database.Host)
 }
 
+func TestLoad_DBPoolInt32Bounds(t *testing.T) {
+	os.Setenv("DB_MAX_CONNS", "50")
+	os.Setenv("DB_MIN_CONNS", "2147483648")
+	defer os.Unsetenv("DB_MAX_CONNS")
+	defer os.Unsetenv("DB_MIN_CONNS")
+
+	cfg := Load()
+	assert.Equal(t, int32(50), cfg.Database.MaxConns)
+	assert.Equal(t, int32(5), cfg.Database.MinConns)
+}
+
 func TestDatabaseConfig_DSN(t *testing.T) {
 	cfg := DatabaseConfig{
 		Host:     "localhost",
@@ -43,6 +54,21 @@ func TestDatabaseConfig_DSN(t *testing.T) {
 	}
 	expected := "postgres://user:pass@localhost:5432/testdb?sslmode=disable"
 	assert.Equal(t, expected, cfg.DSN())
+}
+
+func TestDatabaseConfig_DSN_EscapesSpecialCharacters(t *testing.T) {
+	cfg := DatabaseConfig{
+		Host:     "localhost",
+		Port:     5432,
+		User:     "user@domain",
+		Password: "p@ss:w?rd#",
+		DBName:   "testdb",
+		SSLMode:  "require",
+	}
+	dsn := cfg.DSN()
+	assert.Contains(t, dsn, "postgres://")
+	assert.Contains(t, dsn, "sslmode=require")
+	assert.NotContains(t, dsn, "p@ss:w?rd#")
 }
 
 func TestRedisConfig_Addr(t *testing.T) {
