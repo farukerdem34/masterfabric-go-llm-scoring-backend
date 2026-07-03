@@ -34,24 +34,44 @@ When reporting a security vulnerability, please include:
 
 masterfabric-go is a multi-tenant API management platform. The server is trusted to enforce authentication, authorization, tenant isolation, and policy rules. Clients are untrusted. Administrative operators are trusted to configure secrets, CORS origins, and infrastructure bindings correctly.
 
-### Security Controls (current)
+## Security Controls Registry v0.1
 
-| Area | Control |
-| ---- | ------- |
-| Authentication | JWT bearer tokens on `/api/v1` administrative routes |
-| Authorization | RBAC with wildcard-aware permission checks on state-changing admin routes |
-| Multi-tenancy | `organization_id` and `app_id` enforced in repositories and gateway handlers |
-| Error handling | Generic 5xx client messages; detailed causes logged server-side |
-| Request bodies | Global `MAX_BODY_BYTES` limit (default 1 MiB) via `MaxBytesReader` |
-| CORS | `CORS_ALLOWED_ORIGINS` allow-list; credentials disabled for `*` or empty list |
-| Database DSN | Credentials escaped through `net/url` |
-| Pagination | `page` clamped to `MaxPage` to prevent negative SQL offsets |
-| Outbound proxy | No redirect following; bounded response reads for gateway HTTP proxy |
-| Health probes | Readiness returns generic unhealthy markers only |
-| Containers | Non-root runtime user; Go 1.26.4 builder; alpine 3.24 runtime |
-| Local compose | Database/cache/Kafka ports bind to loopback by default |
+Baseline security controls implemented on the `security/hardening` branch (July 2026). Each control maps to a confirmed audit finding or a portable hardening pattern from the shared platform layer.
 
-### Environment Variables
+| ID | Category | Control | Implementation | CWE | Status |
+| -- | -------- | ------- | -------------- | --- | ------ |
+| SC-01 | Toolchain | Pin Go stdlib to a patched release | `go 1.26.4` in `go.mod` | CWE-94 | ✅ Implemented |
+| SC-02 | Dependencies | Refresh vulnerable direct modules | pgx v5.10.0, chi v5.3.0, validator v10.30.3, `golang.org/x/crypto` v0.53.0 | CWE-400 | ✅ Implemented |
+| SC-03 | Container | Non-root runtime with current base images | `golang:1.26.4-alpine` builder, `alpine:3.24` runtime, `appuser` | CWE-250 | ✅ Implemented |
+| SC-04 | Infrastructure | Bind dev service ports to loopback | `DB_HOST_BIND`, `REDIS_HOST_BIND`, `KAFKA_HOST_BIND` default to `127.0.0.1` in `deployments/docker-compose.yml` | CWE-1392 | ✅ Implemented |
+| SC-05 | Error handling | Sanitize internal server error responses | `internal/shared/response/json.go` — generic 5xx message, detail via `slog` | CWE-209 | ✅ Implemented |
+| SC-06 | Configuration | Escape database DSN credentials | `DatabaseConfig.DSN()` uses `net/url.UserPassword` | CWE-116 | ✅ Implemented |
+| SC-07 | Input validation | Clamp pagination page overflow | `MaxPage = 1_000_000` in `internal/shared/pagination/pagination.go` | CWE-190 | ✅ Implemented |
+| SC-08 | Configuration | Bounded int32 environment parsing | `envOrDefaultInt32` for `DB_MAX_CONNS` / `DB_MIN_CONNS` | G115 | ✅ Implemented |
+| SC-09 | HTTP surface | Safe CORS allow-list | `CORS_ALLOWED_ORIGINS` env + `middleware.CORSOptions`; credentials off for `*` or empty | CWE-942 | ✅ Implemented |
+| SC-10 | HTTP surface | Global request body size cap | `MAX_BODY_BYTES` (default 1 MiB) via `middleware.MaxBodyBytes` | CWE-400 | ✅ Implemented |
+| SC-11 | Observability | Generic readiness probe responses | `internal/infrastructure/http/handler/health/handler.go` — no raw error strings | CWE-209 | ✅ Implemented |
+| SC-12 | Egress | Harden outbound HTTP proxy client | No redirect following, 30s timeout, 1 MiB response cap in `internal/gateway/dynamic_handler.go` | CWE-522 | ✅ Implemented |
+| SC-13 | Authentication | Detect default JWT signing secret | Startup warning in `cmd/server/main.go` when `JWT_SECRET` is unchanged | CWE-798 | ✅ Implemented |
+| SC-14 | Authorization | Enforce RBAC on administrative routes | `RequirePermission` on all `/api/v1` admin routes in `router.go` | CWE-306 | ✅ Implemented |
+| SC-15 | Authorization | Wildcard-aware permission matching | `matchesPermission` in `internal/infrastructure/auth/rbac_service.go` (`*`, `org:*`, `*:read`) | CWE-285 | ✅ Implemented |
+| SC-16 | Input validation | Sanitize migration script names | `scripts/migrate.sh create` — `[a-zA-Z0-9_]` charset only | CWE-22 | ✅ Implemented |
+| SC-17 | Gateway | Suppress internal DB errors in dynamic handler | Generic `"an internal error occurred"` to clients; detail in logs | CWE-209 | ✅ Implemented |
+| SC-18 | Gateway | Document intentional proxy SSRF sink | `#nosec G704` on admin-configured outbound proxy; accepted risk entry below | CWE-918 | ✅ Documented |
+| SC-19 | Verification | Automated vulnerability scanning gate | `govulncheck` clean; `gosec` clean with 2 audited suppressions | — | ✅ Verified |
+
+### Control summary
+
+| Metric | Value |
+| ------ | ----- |
+| Registry version | **v0.1** |
+| Total controls | **19** |
+| Implemented | **18** |
+| Documented accepted risk | **1** (SC-18) |
+| Go toolchain | **1.26.4** |
+| Verification | `go test ./...`, `govulncheck`, `gosec` |
+
+### Environment variables
 
 | Variable | Purpose | Production guidance |
 | -------- | ------- | ------------------- |
