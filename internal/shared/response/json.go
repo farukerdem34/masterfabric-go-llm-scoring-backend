@@ -2,6 +2,7 @@ package response
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	domainErr "github.com/masterfabric-go/masterfabric/internal/shared/errors"
@@ -19,9 +20,14 @@ func JSON(w http.ResponseWriter, status int, payload interface{}) {
 // Error writes a JSON error response, mapping domain errors to HTTP codes.
 func Error(w http.ResponseWriter, err error) {
 	code := domainErr.HTTPStatusCode(err)
+	msg := err.Error()
+	if code >= http.StatusInternalServerError {
+		slog.Error("request failed", "code", code, "error", err)
+		msg = "an internal error occurred"
+	}
 	JSON(w, code, domainErr.ErrorResponse{
 		Error:   http.StatusText(code),
-		Message: err.Error(),
+		Message: msg,
 		Code:    code,
 	})
 }
