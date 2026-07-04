@@ -16,6 +16,7 @@ import (
 	auditHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/audit"
 	"github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/health"
 	iamHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/iam"
+	realtimeHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/realtime"
 	tenantHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/tenant"
 
 	// Services & middleware
@@ -48,10 +49,11 @@ type Dependencies struct {
 	RBACService iamService.RBACService
 
 	// Handlers
-	IAMHandler    *iamHandler.Handler
-	TenantHandler *tenantHandler.Handler
-	APIMgmtHandler *apimgmtHandler.Handler
-	AuditHandler  *auditHandler.Handler
+	IAMHandler      *iamHandler.Handler
+	TenantHandler   *tenantHandler.Handler
+	APIMgmtHandler  *apimgmtHandler.Handler
+	AuditHandler    *auditHandler.Handler
+	RealtimeHandler *realtimeHandler.Handler
 
 	// Gateway
 	GatewayPipeline *gateway.Pipeline
@@ -102,6 +104,11 @@ func New(deps Dependencies) *chi.Mux {
 			if deps.OrgRepo != nil {
 				// Note: WorkspaceRepo can be nil - workspace resolution is optional
 				r.Use(middleware.TenantResolverWithWorkspace(deps.OrgRepo, deps.WorkspaceRepo))
+			}
+
+			// WebSocket endpoint (before gateway pipeline — upgrade requests are not HTTP proxy)
+			if deps.RealtimeHandler != nil {
+				r.Get("/ws", deps.RealtimeHandler.Connect)
 			}
 
 			// Gateway pipeline (rate limiting, permission enforcement for managed endpoints)

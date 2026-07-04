@@ -18,9 +18,11 @@ import (
 	apimgmtHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/apimanagement"
 	auditHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/audit"
 	iamHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/iam"
+	realtimeHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/realtime"
 	tenantHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/tenant"
 	"github.com/masterfabric-go/masterfabric/internal/infrastructure/http/router"
 	infraKafka "github.com/masterfabric-go/masterfabric/internal/infrastructure/kafka"
+	infraWS "github.com/masterfabric-go/masterfabric/internal/infrastructure/websocket"
 	pgApimgmt "github.com/masterfabric-go/masterfabric/internal/infrastructure/postgres/apimanagement"
 	pgAudit "github.com/masterfabric-go/masterfabric/internal/infrastructure/postgres/audit"
 	pgIam "github.com/masterfabric-go/masterfabric/internal/infrastructure/postgres/iam"
@@ -29,6 +31,7 @@ import (
 	// Application use cases
 	apimgmtUC "github.com/masterfabric-go/masterfabric/internal/application/apimanagement/usecase"
 	iamUC "github.com/masterfabric-go/masterfabric/internal/application/iam/usecase"
+	realtimeUC "github.com/masterfabric-go/masterfabric/internal/application/realtime/usecase"
 	tenantUC "github.com/masterfabric-go/masterfabric/internal/application/tenant/usecase"
 
 	// Gateway
@@ -274,6 +277,27 @@ func buildDependencies(
 	)
 	deps.APIMgmtHandler = apimgmtHandler.NewHandler(defineEndpointUC, updatePolicyUC, retireEndpointUC, activateEndpointUC, endpointRepo, policyRepo)
 	deps.AuditHandler = auditHandler.NewHandler(auditRepo)
+
+	// --- WebSocket real-time hub ---
+	wsHub := infraWS.NewHub(log, cfg.WebSocket.MaxConnections)
+	eventBridge := infraWS.NewEventBridge(wsHub, appRepo, log)
+	eventBridge.Register(eventBus)
+
+	validateConnectUC := realtimeUC.NewValidateConnectUseCase(appRepo, rbacService)
+	wsUpgrader := infraWS.NewUpgrader(infraWS.UpgraderConfig{
+		ReadBufferSize:  cfg.WebSocket.ReadBufferSize,
+		WriteBufferSize: cfg.WebSocket.WriteBufferSize,
+		AllowedOrigins:  cfg.Server.CORSAllowedOrigins,
+	})
+	deps.RealtimeHandler = realtimeHandler.NewHandler(realtimeHandler.Config{
+		ValidateUC:   validateConnectUC,
+		AuthService:  jwtService,
+		Hub:          wsHub,
+		Upgrader:     wsUpgrader,
+		PingInterval: cfg.WebSocket.PingIntervalSec,
+		Logger:       log,
+		Enabled:      cfg.WebSocket.Enabled,
+	})
 
 	// --- Gateway pipeline with interceptors ---
 	// Create interceptor chain: schema validation, PII masking, request/response transformers

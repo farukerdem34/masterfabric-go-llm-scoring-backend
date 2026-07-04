@@ -152,6 +152,44 @@ curl http://localhost:8080/health/ready
 - `GET /health/ready` - Readiness probe
 - `GET /metrics` - Prometheus metrics
 
+### Real-time (WebSocket)
+- `GET /api/v1/ws?token=<jwt>` - WebSocket upgrade for live domain event delivery
+
+**Required headers:** `X-Organization-ID`, `X-App-ID`  
+**Auth:** JWT via `?token=` query parameter (browser-friendly) or `Authorization: Bearer` header  
+**Permission:** `app:read`
+
+```javascript
+const ws = new WebSocket(
+  "ws://localhost:8080/api/v1/ws?token=" + jwt,
+  [],
+);
+// Set headers via a WS client library; browsers require ?token= query param
+```
+
+**Client protocol:**
+
+```json
+{ "action": "subscribe",   "channel": "api-management" }
+{ "action": "unsubscribe", "channel": "tenant" }
+{ "action": "ping" }
+```
+
+**Server push:**
+
+```json
+{
+  "type": "endpoint.created",
+  "topic": "masterfabric.api-management",
+  "organization_id": "uuid",
+  "app_id": "uuid",
+  "data": { ... },
+  "timestamp": "2026-07-03T12:00:00Z"
+}
+```
+
+Architecture details: [`docs/WEBSOCKET.md`](docs/WEBSOCKET.md)
+
 ## Postman Collection
 
 A complete Postman collection with **37 requests** and **auto-capturing scripts** is available:
@@ -309,6 +347,11 @@ All configuration is via environment variables with sensible defaults:
 | `JWT_EXPIRATION_HOURS` | `24` | JWT token lifetime |
 | `LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
 | `LOG_FORMAT` | `json` | Log format (json, text) |
+| `WS_ENABLED` | `true` | Enable WebSocket endpoint |
+| `WS_MAX_CONNECTIONS` | `1000` | Maximum concurrent WebSocket connections |
+| `WS_PING_INTERVAL_SECONDS` | `30` | Server ping interval for keepalive |
+| `WS_READ_BUFFER_SIZE` | `1024` | WebSocket read buffer size (bytes) |
+| `WS_WRITE_BUFFER_SIZE` | `1024` | WebSocket write buffer size (bytes) |
 
 ## Kafka Event Bus
 
@@ -389,7 +432,10 @@ internal/
   application/          - Use cases and DTOs
   infrastructure/       - External implementations (postgres, redis, http)
   gateway/              - API Gateway policy pipeline
+  domain/realtime/      - WebSocket room model and hub interface
+  infrastructure/websocket/ - In-memory hub, event bridge, session pumps
 deployments/            - Docker and deployment configs
+docs/                   - Architecture documentation (WEBSOCKET.md)
 ```
 
 ## Scripts

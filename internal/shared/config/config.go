@@ -11,12 +11,22 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	Redis    RedisConfig
-	JWT      JWTConfig
-	Kafka    KafkaConfig
-	Log      LogConfig
+	Server    ServerConfig
+	Database  DatabaseConfig
+	Redis     RedisConfig
+	JWT       JWTConfig
+	Kafka     KafkaConfig
+	WebSocket WebSocketConfig
+	Log       LogConfig
+}
+
+// WebSocketConfig holds real-time WebSocket settings.
+type WebSocketConfig struct {
+	Enabled         bool
+	MaxConnections  int
+	PingIntervalSec int
+	ReadBufferSize  int
+	WriteBufferSize int
 }
 
 // ServerConfig holds HTTP server settings.
@@ -128,6 +138,13 @@ func Load() *Config {
 			Enabled:           envOrDefault("KAFKA_ENABLED", "false") == "true",
 			NumPartitions:     envOrDefaultInt("KAFKA_NUM_PARTITIONS", 3),
 			ReplicationFactor: envOrDefaultInt("KAFKA_REPLICATION_FACTOR", 1),
+		},
+		WebSocket: WebSocketConfig{
+			Enabled:         envOrDefault("WS_ENABLED", "true") == "true",
+			MaxConnections:  envOrDefaultInt("WS_MAX_CONNECTIONS", 1000),
+			PingIntervalSec: envOrDefaultInt("WS_PING_INTERVAL_SECONDS", 30),
+			ReadBufferSize:  envOrDefaultInt("WS_READ_BUFFER_SIZE", 1024),
+			WriteBufferSize: envOrDefaultInt("WS_WRITE_BUFFER_SIZE", 1024),
 		},
 		Log: LogConfig{
 			Level:  envOrDefault("LOG_LEVEL", "info"),
