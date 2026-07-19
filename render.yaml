@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: masterfabric-go
+    runtime: go
+    buildCommand: go build -o server ./cmd/server
+    startCommand: ./server
+    envVars:
+      - key: SERVER_HOST
+        value: "0.0.0.0"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: masterfabric-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_ISSUER
+        value: "masterfabric"
+      - key: ENVIRONMENT
+        value: "production"
+      - key: LOG_LEVEL
+        value: "info"
+      - key: LOG_FORMAT
+        value: "json"
+      - key: KAFKA_ENABLED
+        value: "false"
+      - key: REDIS_HOST
+        value: ""
+      - key: WS_ENABLED
+        value: "true"
+    healthCheckPath: /health/live
+
+databases:
+  - name: masterfabric-db
+    plan: free
+    databaseName: masterfabric
