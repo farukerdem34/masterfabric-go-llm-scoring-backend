@@ -214,6 +214,7 @@ func buildDependencies(
 	// --- Repositories ---
 	userRepo := pgIam.NewUserRepo(db)
 	roleRepo := pgIam.NewRoleRepo(db)
+	refreshTokenRepo := pgIam.NewRefreshTokenRepo(db)
 	orgRepo := pgTenant.NewOrgRepo(db)
 	workspaceRepo := pgTenant.NewWorkspaceRepository(db)
 	appRepo := pgTenant.NewAppRepo(db)
@@ -235,6 +236,7 @@ func buildDependencies(
 	registerUC := iamUC.NewRegisterUseCase(userRepo, jwtService, eventBus)
 	loginUC := iamUC.NewLoginUseCase(userRepo, jwtService)
 	assignRoleUC := iamUC.NewAssignRoleUseCase(roleRepo, rbacService, eventBus)
+	refreshTokenUC := iamUC.NewRefreshTokenUseCase(refreshTokenRepo, userRepo, jwtService, cfg.RefreshToken, cfg.JWT.Issuer)
 	createOrgUC := tenantUC.NewCreateOrgUseCase(orgRepo, eventBus)
 	createWorkspaceUC := tenantUC.NewCreateWorkspaceUseCase(workspaceRepo, orgRepo, eventBus)
 	listWorkspacesUC := tenantUC.NewListWorkspacesUseCase(workspaceRepo)
@@ -264,7 +266,7 @@ func buildDependencies(
 	})
 
 	// --- Handlers ---
-	deps.IAMHandler = iamHandler.NewHandler(registerUC, loginUC, assignRoleUC, userRepo)
+	deps.IAMHandler = iamHandler.NewHandler(registerUC, loginUC, assignRoleUC, refreshTokenUC, userRepo, cfg.RefreshToken)
 	deps.TenantHandler = tenantHandler.NewHandler(
 		createOrgUC,
 		createAppUC,

@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/masterfabric-go/masterfabric/internal/application/iam/dto"
 	"github.com/masterfabric-go/masterfabric/internal/application/iam/usecase"
+	"github.com/masterfabric-go/masterfabric/internal/shared/config"
 	"github.com/masterfabric-go/masterfabric/internal/shared/middleware"
 	"github.com/masterfabric-go/masterfabric/internal/shared/pagination"
 	"github.com/masterfabric-go/masterfabric/internal/shared/response"
@@ -17,10 +18,12 @@ import (
 
 // Handler provides IAM HTTP handlers.
 type Handler struct {
-	registerUC  *usecase.RegisterUseCase
-	loginUC     *usecase.LoginUseCase
-	assignRoleUC *usecase.AssignRoleUseCase
-	userRepo    iamRepo.UserRepository
+	registerUC     *usecase.RegisterUseCase
+	loginUC        *usecase.LoginUseCase
+	assignRoleUC   *usecase.AssignRoleUseCase
+	refreshTokenUC *usecase.RefreshTokenUseCase
+	userRepo       iamRepo.UserRepository
+	refreshTokenCfg config.RefreshTokenConfig
 }
 
 // NewHandler creates a new IAM handler.
@@ -28,13 +31,17 @@ func NewHandler(
 	registerUC *usecase.RegisterUseCase,
 	loginUC *usecase.LoginUseCase,
 	assignRoleUC *usecase.AssignRoleUseCase,
+	refreshTokenUC *usecase.RefreshTokenUseCase,
 	userRepo iamRepo.UserRepository,
+	refreshTokenCfg config.RefreshTokenConfig,
 ) *Handler {
 	return &Handler{
-		registerUC:  registerUC,
-		loginUC:     loginUC,
-		assignRoleUC: assignRoleUC,
-		userRepo:    userRepo,
+		registerUC:     registerUC,
+		loginUC:        loginUC,
+		assignRoleUC:   assignRoleUC,
+		refreshTokenUC: refreshTokenUC,
+		userRepo:       userRepo,
+		refreshTokenCfg: refreshTokenCfg,
 	}
 }
 
@@ -69,7 +76,33 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.JSON(w, http.StatusOK, result)
+	// Generate refresh token
+	if h.refreshTokenUC != nil {
+		rawRefreshToken, _, err := h.refreshTokenUC.GenerateRefreshToken(r.Context(), result.User.ID, r)
+		if err != nil {
+			response.Error(w, err)
+			return
+		}
+
+		// Set refresh token cookie
+		http.SetCookie(w, &http.Cookie{
+			Name:     h.refreshTokenCfg.CookieName,
+			Value:    rawRefreshToken,
+			Path:     h.refreshTokenCfg.CookiePath,
+			MaxAge:   int(h.refreshTokenCfg.Duration.Seconds()),
+			HttpOnly: true,
+			Secure:   h.refreshTokenCfg.Secure,
+			SameSite: http.SameSiteStrictMode,
+		})
+	}
+
+	// Return access token
+	response.JSON(w, http.StatusOK, dto.LoginResponseV2{
+		AccessToken: result.Token,
+		TokenType:   "Bearer",
+		ExpiresIn:   h.refreshTokenCfg.AccessTokenTTL * 60,
+		User:        result.User,
+	})
 }
 
 // AssignRole handles role assignment.
@@ -160,4 +193,105 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, pagination.NewResult(infos, params, total))
+}
+
+// Refresh handles refresh token rotation.
+func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(h.refreshTokenCfg.CookieName)
+	if err != nil {
+		response.JSON(w, http.StatusUnauthorized, map[string]string{"error": "missing refresh token"})
+		return
+	}
+
+	result, err := h.refreshTokenUC.Rotate(r.Context(), cookie.Value, r)
+	if err != nil {
+		// Clear the invalid cookie
+		http.SetCookie(w, &http.Cookie{
+			Name:     h.refreshTokenCfg.CookieName,
+			Value:    "",
+			Path:     h.refreshTokenCfg.CookiePath,
+			MaxAge:   -1,
+			HttpOnly: true,
+		})
+		response.Error(w, err)
+		return
+	}
+
+	// Set new refresh token cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     h.refreshTokenCfg.CookieName,
+		Value:    cookie.Value, // Will be replaced by new token from use case
+		Path:     h.refreshTokenCfg.CookiePath,
+		MaxAge:   int(h.refreshTokenCfg.Duration.Seconds()),
+		HttpOnly: true,
+		Secure:   h.refreshTokenCfg.Secure,
+		SameSite: http.SameSiteStrictMode,
+	})
+
+	response.JSON(w, http.StatusOK, result)
+}
+
+// Logout revokes the current refresh token.
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(h.refreshTokenCfg.CookieName)
+	if err != nil {
+		// No cookie, already logged out
+		response.NoContent(w)
+		return
+	}
+
+	_ = h.refreshTokenUC.Logout(r.Context(), cookie.Value)
+
+	// Clear cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     h.refreshTokenCfg.CookieName,
+		Value:    "",
+		Path:     h.refreshTokenCfg.CookiePath,
+		MaxAge:   -1,
+		HttpOnly: true,
+	})
+
+	response.NoContent(w)
+}
+
+// LogoutAll revokes all refresh tokens for the authenticated user.
+func (h *Handler) LogoutAll(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.JSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
+		return
+	}
+
+	if err := h.refreshTokenUC.LogoutAll(r.Context(), userID); err != nil {
+		response.Error(w, err)
+		return
+	}
+
+	// Clear cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     h.refreshTokenCfg.CookieName,
+		Value:    "",
+		Path:     h.refreshTokenCfg.CookiePath,
+		MaxAge:   -1,
+		HttpOnly: true,
+	})
+
+	response.NoContent(w)
+}
+
+// Sessions returns active sessions for the authenticated user.
+func (h *Handler) Sessions(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.JSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
+		return
+	}
+
+	sessions, err := h.refreshTokenUC.ListSessions(r.Context(), userID)
+	if err != nil {
+		response.Error(w, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, sessions)
 }
