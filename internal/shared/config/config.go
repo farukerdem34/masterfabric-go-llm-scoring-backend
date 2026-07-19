@@ -11,13 +11,14 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	Server    ServerConfig
-	Database  DatabaseConfig
-	Redis     RedisConfig
-	JWT       JWTConfig
-	Kafka     KafkaConfig
-	WebSocket WebSocketConfig
-	Log       LogConfig
+	Server       ServerConfig
+	Database     DatabaseConfig
+	Redis        RedisConfig
+	JWT          JWTConfig
+	Kafka        KafkaConfig
+	WebSocket    WebSocketConfig
+	Log          LogConfig
+	RefreshToken RefreshTokenConfig
 }
 
 // WebSocketConfig holds real-time WebSocket settings.
@@ -99,28 +100,28 @@ type LogConfig struct {
 	Format string // json, text
 }
 
+// RefreshTokenConfig holds refresh token cookie and lifetime settings.
+type RefreshTokenConfig struct {
+	Duration       time.Duration // Token lifetime (default 7 days)
+	CookieName     string        // Cookie name (default "refresh_token")
+	CookiePath     string        // Cookie path (default "/auth/refresh")
+	Secure         bool          // Secure flag (true in production)
+	AccessTokenTTL int           // Access token lifetime in minutes (default 15)
+}
+
 // Load reads configuration from environment variables with sensible defaults.
 func Load() *Config {
-	return &Config{
+	cfg := &Config{
 		Server: ServerConfig{
 			Host:               envOrDefault("SERVER_HOST", "0.0.0.0"),
-			Port:               envOrDefaultInt("SERVER_PORT", 8080),
+			Port:               envOrDefaultInt("PORT", envOrDefaultInt("SERVER_PORT", 8080)),
 			ReadTimeout:        time.Duration(envOrDefaultInt("SERVER_READ_TIMEOUT_SECONDS", 15)) * time.Second,
 			WriteTimeout:       time.Duration(envOrDefaultInt("SERVER_WRITE_TIMEOUT_SECONDS", 15)) * time.Second,
 			IdleTimeout:        time.Duration(envOrDefaultInt("SERVER_IDLE_TIMEOUT_SECONDS", 60)) * time.Second,
 			CORSAllowedOrigins: envOrDefaultSlice("CORS_ALLOWED_ORIGINS", nil),
 			MaxBodyBytes:       envOrDefaultInt64("MAX_BODY_BYTES", 1<<20),
 		},
-		Database: DatabaseConfig{
-			Host:     envOrDefault("DB_HOST", "localhost"),
-			Port:     envOrDefaultInt("DB_PORT", 5432),
-			User:     envOrDefault("DB_USER", "masterfabric"),
-			Password: envOrDefault("DB_PASSWORD", "masterfabric"),
-			DBName:   envOrDefault("DB_NAME", "masterfabric"),
-			SSLMode:  envOrDefault("DB_SSLMODE", "disable"),
-			MaxConns: envOrDefaultInt32("DB_MAX_CONNS", 25),
-			MinConns: envOrDefaultInt32("DB_MIN_CONNS", 5),
-		},
+		Database: loadDatabaseConfig(),
 		Redis: RedisConfig{
 			Host:     envOrDefault("REDIS_HOST", "localhost"),
 			Port:     envOrDefaultInt("REDIS_PORT", 6379),
@@ -150,6 +151,74 @@ func Load() *Config {
 			Level:  envOrDefault("LOG_LEVEL", "info"),
 			Format: envOrDefault("LOG_FORMAT", "json"),
 		},
+		RefreshToken: RefreshTokenConfig{
+			Duration:       7 * 24 * time.Hour,
+			CookieName:     "refresh_token",
+			CookiePath:     "/api/v1/auth/refresh",
+			Secure:         envOrDefault("ENVIRONMENT", "development") == "production",
+			AccessTokenTTL: 15,
+		},
+	}
+	return cfg
+}
+
+func loadDatabaseConfig() DatabaseConfig {
+	// Support Render's DATABASE_URL (single connection string)
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		return parseDatabaseURL(dbURL)
+	}
+	return DatabaseConfig{
+		Host:     envOrDefault("DB_HOST", "localhost"),
+		Port:     envOrDefaultInt("DB_PORT", 5432),
+		User:     envOrDefault("DB_USER", "masterfabric"),
+		Password: envOrDefault("DB_PASSWORD", "masterfabric"),
+		DBName:   envOrDefault("DB_NAME", "masterfabric"),
+		SSLMode:  envOrDefault("DB_SSLMODE", "disable"),
+		MaxConns: envOrDefaultInt32("DB_MAX_CONNS", 25),
+		MinConns: envOrDefaultInt32("DB_MIN_CONNS", 5),
+	}
+}
+
+func parseDatabaseURL(dbURL string) DatabaseConfig {
+	u, err := url.Parse(dbURL)
+	if err != nil {
+		// Fallback to individual env vars
+		return DatabaseConfig{
+			Host:     envOrDefault("DB_HOST", "localhost"),
+			Port:     envOrDefaultInt("DB_PORT", 5432),
+			User:     envOrDefault("DB_USER", "masterfabric"),
+			Password: envOrDefault("DB_PASSWORD", "masterfabric"),
+			DBName:   envOrDefault("DB_NAME", "masterfabric"),
+			SSLMode:  envOrDefault("DB_SSLMODE", "disable"),
+			MaxConns: envOrDefaultInt32("DB_MAX_CONNS", 25),
+			MinConns: envOrDefaultInt32("DB_MIN_CONNS", 5),
+		}
+	}
+
+	user := u.User.Username()
+	password, _ := u.User.Password()
+	host := u.Hostname()
+	port := 5432
+	if u.Port() != "" {
+		if p, err := strconv.Atoi(u.Port()); err == nil {
+			port = p
+		}
+	}
+	dbName := strings.TrimPrefix(u.Path, "/")
+	sslmode := u.Query().Get("sslmode")
+	if sslmode == "" {
+		sslmode = "require"
+	}
+
+	return DatabaseConfig{
+		Host:     host,
+		Port:     port,
+		User:     user,
+		Password: password,
+		DBName:   dbName,
+		SSLMode:  sslmode,
+		MaxConns: envOrDefaultInt32("DB_MAX_CONNS", 25),
+		MinConns: envOrDefaultInt32("DB_MIN_CONNS", 5),
 	}
 }
 
