@@ -22,6 +22,7 @@ import (
 	// Services & middleware
 	iamService "github.com/masterfabric-go/masterfabric/internal/domain/iam/service"
 	"github.com/masterfabric-go/masterfabric/internal/gateway"
+	"github.com/masterfabric-go/masterfabric/internal/shared/config"
 	"github.com/masterfabric-go/masterfabric/internal/shared/middleware"
 
 	// Repositories (for tenant resolver middleware)
@@ -47,6 +48,9 @@ type Dependencies struct {
 	// Services
 	AuthService iamService.AuthService
 	RBACService iamService.RBACService
+
+	// Config
+	RefreshTokenConfig config.RefreshTokenConfig
 
 	// Handlers
 	IAMHandler      *iamHandler.Handler
@@ -91,6 +95,7 @@ func New(deps Dependencies) *chi.Mux {
 			if deps.IAMHandler != nil {
 				r.Post("/register", deps.IAMHandler.Register)
 				r.Post("/login", deps.IAMHandler.Login)
+				r.Post("/refresh", deps.IAMHandler.Refresh)
 			}
 		})
 
@@ -125,6 +130,13 @@ func New(deps Dependencies) *chi.Mux {
 					r.Get("/{id}", deps.IAMHandler.GetUser)
 				})
 				r.With(maybeRequirePermission(deps.RBACService, "user:write")).Post("/roles/assign", deps.IAMHandler.AssignRole)
+			}
+
+			// Auth management routes (logout, sessions)
+			if deps.IAMHandler != nil {
+				r.Post("/auth/logout", deps.IAMHandler.Logout)
+				r.Post("/auth/logout-all", deps.IAMHandler.LogoutAll)
+				r.Get("/auth/sessions", deps.IAMHandler.Sessions)
 			}
 
 			// Organization routes
