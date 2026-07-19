@@ -8,9 +8,10 @@ import (
 
 // RefreshResponse is the output for token refresh.
 type RefreshResponse struct {
-	AccessToken string `json:"access_token"`
-	TokenType   string `json:"token_type"`
-	ExpiresIn   int    `json:"expires_in"` // seconds
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"-"` // Raw token, set in cookie only (not in JSON)
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int    `json:"expires_in"` // seconds
 }
 
 // LoginResponseV2 is the output for successful login with refresh token.

@@ -220,7 +220,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	// Set new refresh token cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     h.refreshTokenCfg.CookieName,
-		Value:    cookie.Value, // Will be replaced by new token from use case
+		Value:    result.RefreshToken, // New rotated token
 		Path:     h.refreshTokenCfg.CookiePath,
 		MaxAge:   int(h.refreshTokenCfg.Duration.Seconds()),
 		HttpOnly: true,

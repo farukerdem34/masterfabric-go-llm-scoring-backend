@@ -130,9 +130,10 @@ func (uc *RefreshTokenUseCase) Rotate(ctx context.Context, rawToken string, r *h
 	}
 
 	return &dto.RefreshResponse{
-		AccessToken: accessToken,
-		TokenType:   "Bearer",
-		ExpiresIn:   uc.cfg.AccessTokenTTL * 60,
+		AccessToken:  accessToken,
+		RefreshToken: newRawToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    uc.cfg.AccessTokenTTL * 60,
 	}, nil
 }
 
