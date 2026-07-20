@@ -26,6 +26,7 @@ import (
 	pgApimgmt "github.com/masterfabric-go/masterfabric/internal/infrastructure/postgres/apimanagement"
 	pgAudit "github.com/masterfabric-go/masterfabric/internal/infrastructure/postgres/audit"
 	pgIam "github.com/masterfabric-go/masterfabric/internal/infrastructure/postgres/iam"
+	infraPostgres "github.com/masterfabric-go/masterfabric/internal/infrastructure/postgres"
 	pgTenant "github.com/masterfabric-go/masterfabric/internal/infrastructure/postgres/tenant"
 
 	// Application use cases
@@ -92,6 +93,12 @@ func run() error {
 	} else {
 		defer db.Close()
 		log.Info("connected to postgres")
+
+		// Run database migrations automatically
+		if err := infraPostgres.RunMigrations(ctx, db, log); err != nil {
+			log.Error("migration failed", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	// Initialize Redis
