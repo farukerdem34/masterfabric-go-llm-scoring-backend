@@ -17,6 +17,7 @@ import (
 	"github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/health"
 	iamHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/iam"
 	realtimeHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/realtime"
+	statisticsHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/statistics"
 	tenantHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/tenant"
 
 	// Services & middleware
@@ -56,8 +57,9 @@ type Dependencies struct {
 	IAMHandler      *iamHandler.Handler
 	TenantHandler   *tenantHandler.Handler
 	APIMgmtHandler  *apimgmtHandler.Handler
-	AuditHandler    *auditHandler.Handler
-	RealtimeHandler *realtimeHandler.Handler
+	AuditHandler      *auditHandler.Handler
+	StatisticsHandler *statisticsHandler.Handler
+	RealtimeHandler   *realtimeHandler.Handler
 
 	// Gateway
 	GatewayPipeline *gateway.Pipeline
@@ -198,6 +200,12 @@ func New(deps Dependencies) *chi.Mux {
 			// Audit logs by user
 			if deps.AuditHandler != nil {
 				r.With(maybeRequirePermission(deps.RBACService, "org:read")).Get("/users/{userId}/audit-logs", deps.AuditHandler.ListByUser)
+			}
+
+			// Model usage statistics
+			if deps.StatisticsHandler != nil {
+				r.Post("/statistics/usage", deps.StatisticsHandler.RecordUsage)
+				r.Get("/statistics/usage", deps.StatisticsHandler.GetUserStats)
 			}
 
 			// Catch-all handler for managed endpoints (must be last in the group)

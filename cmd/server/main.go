@@ -19,6 +19,7 @@ import (
 	auditHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/audit"
 	iamHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/iam"
 	realtimeHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/realtime"
+	statisticsHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/statistics"
 	tenantHandler "github.com/masterfabric-go/masterfabric/internal/infrastructure/http/handler/tenant"
 	"github.com/masterfabric-go/masterfabric/internal/infrastructure/http/router"
 	infraKafka "github.com/masterfabric-go/masterfabric/internal/infrastructure/kafka"
@@ -27,12 +28,14 @@ import (
 	pgAudit "github.com/masterfabric-go/masterfabric/internal/infrastructure/postgres/audit"
 	pgIam "github.com/masterfabric-go/masterfabric/internal/infrastructure/postgres/iam"
 	infraPostgres "github.com/masterfabric-go/masterfabric/internal/infrastructure/postgres"
+	pgStatistics "github.com/masterfabric-go/masterfabric/internal/infrastructure/postgres/statistics"
 	pgTenant "github.com/masterfabric-go/masterfabric/internal/infrastructure/postgres/tenant"
 
 	// Application use cases
 	apimgmtUC "github.com/masterfabric-go/masterfabric/internal/application/apimanagement/usecase"
 	iamUC "github.com/masterfabric-go/masterfabric/internal/application/iam/usecase"
 	realtimeUC "github.com/masterfabric-go/masterfabric/internal/application/realtime/usecase"
+	statisticsUC "github.com/masterfabric-go/masterfabric/internal/application/statistics/usecase"
 	tenantUC "github.com/masterfabric-go/masterfabric/internal/application/tenant/usecase"
 
 	// Gateway
@@ -230,6 +233,7 @@ func buildDependencies(
 	endpointRepo := pgApimgmt.NewEndpointRepo(db)
 	policyRepo := pgApimgmt.NewPolicyRepo(db)
 	auditRepo := pgAudit.NewAuditRepo(db)
+	statsRepo := pgStatistics.NewUsageStatRepo(db)
 
 	// --- Services ---
 	jwtService := infraAuth.NewJWTService(cfg.JWT)
@@ -287,6 +291,11 @@ func buildDependencies(
 	)
 	deps.APIMgmtHandler = apimgmtHandler.NewHandler(defineEndpointUC, updatePolicyUC, retireEndpointUC, activateEndpointUC, endpointRepo, policyRepo)
 	deps.AuditHandler = auditHandler.NewHandler(auditRepo)
+
+	// --- Statistics use cases and handler ---
+	recordUsageUC := statisticsUC.NewRecordUsageUseCase(statsRepo)
+	getUserStatsUC := statisticsUC.NewGetUserStatsUseCase(statsRepo)
+	deps.StatisticsHandler = statisticsHandler.NewHandler(recordUsageUC, getUserStatsUC)
 
 	// --- WebSocket real-time hub ---
 	wsHub := infraWS.NewHub(log, cfg.WebSocket.MaxConnections)
