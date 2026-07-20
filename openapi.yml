@@ -132,7 +132,7 @@ paths:
             Set-Cookie:
               description: |
                 Refresh token cookie (HttpOnly, not accessible via JavaScript).
-                Format: `refresh_token=<token>; Path=/api/v1/auth; HttpOnly; SameSite=None; Secure`
+                Format: `refresh_token=<token>; Path=/api/v1/auth/refresh; HttpOnly; SameSite=None; Secure`
               schema:
                 type: string
           content:
@@ -398,5 +398,13 @@ components:
       properties:
         error:
           type: string
-          description: Error message
-          example: invalid credentials
+          description: HTTP status text
+          example: Not Found
+        message:
+          type: string
+          description: Detailed error message
+          example: user not found
+        code:
+          type: integer
+          description: HTTP status code
+          example: 404
