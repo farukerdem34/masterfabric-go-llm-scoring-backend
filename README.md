@@ -489,6 +489,173 @@ make clean          # Clean build artifacts
 
 **Note**: For development with hot-reload, use `./dev.sh` instead of `make run`.
 
+## Deployment to Render
+
+### Prerequisites
+
+- Render account (free tier works)
+- GitHub repository with this code
+- Render CLI (optional, for blueprint deployment)
+
+### Option 1: Deploy via Blueprint (Recommended)
+
+1. **Push code to GitHub** (ensure `render.yaml` is in root)
+
+2. **Create Render Blueprint**:
+   - Go to Render Dashboard → Blueprints → New Blueprint
+   - Connect your GitHub repository
+   - Render will detect `render.yaml` and configure:
+     - Web service (`masterfabric-go`)
+     - PostgreSQL database (`masterfabric-db`)
+     - Environment variables (auto-generated JWT secret)
+
+3. **Deploy**:
+   - Click "Apply" to create resources
+   - First deploy takes ~5-10 minutes (build + migrations)
+
+4. **Verify**:
+   - Service URL: `https://your-service.onrender.com`
+   - Health: `https://your-service.onrender.com/health/live`
+   - Ready: `https://your-service.onrender.com/health/ready`
+
+### Option 2: Manual Deployment
+
+#### Step 1: Create PostgreSQL Database
+
+1. Render Dashboard → Databases → New PostgreSQL
+2. Settings:
+   - Name: `masterfabric-db`
+   - Database: `masterfabric`
+   - User: `masterfabric`
+   - Plan: Free (dev) or Starter (prod)
+3. Note the **Internal Database URL** (format: `postgres://user:pass@host:port/dbname`)
+
+#### Step 2: Create Web Service
+
+1. Render Dashboard → Web Services → New Web Service
+2. Connect GitHub repository
+3. Settings:
+   - Name: `masterfabric-go`
+   - Runtime: Go
+   - Build Command: `go build -o server ./cmd/server`
+   - Start Command: `./server`
+   - Plan: Free (dev) or Starter (prod)
+
+#### Step 3: Configure Environment Variables
+
+Add these in the web service "Environment" tab:
+
+```bash
+# Database (from Step 1)
+DATABASE_URL=<your-internal-database-url>
+
+# Server
+SERVER_HOST=0.0.0.0
+PORT=8080
+ENVIRONMENT=production
+
+# Authentication (generate a strong secret)
+JWT_SECRET=<generate-random-64-char-string>
+JWT_ISSUER=masterfabric
+JWT_EXPIRATION_HOURS=24
+
+# Logging
+LOG_LEVEL=info
+LOG_FORMAT=json
+
+# Features
+KAFKA_ENABLED=false
+REDIS_HOST=
+WS_ENABLED=true
+
+# Security
+CORS_ALLOWED_ORIGINS=
+MAX_BODY_BYTES=1048576
+```
+
+**Generate JWT_SECRET**:
+```bash
+openssl rand -hex 32
+```
+
+#### Step 4: Deploy
+
+- Click "Create Web Service"
+- Render will build and deploy automatically
+- First deploy runs migrations automatically (see `cmd/server/main.go:98-102`)
+
+#### Step 5: Seed Database (Optional)
+
+After first deploy, seed initial roles/permissions:
+
+```bash
+# Using Render Shell (Dashboard → Web Service → Shell)
+go run scripts/seed.go
+
+# Or via Render CLI
+render ssh masterfabric-go -c "go run scripts/seed.go"
+```
+
+### Post-Deployment Verification
+
+```bash
+# Health checks
+curl https://your-service.onrender.com/health/live
+# {"status":"alive"}
+
+curl https://your-service.onrender.com/health/ready
+# {"status":"ready","services":{"postgres":"healthy"}}
+
+# Register first user
+curl -X POST https://your-service.onrender.com/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"securepassword"}'
+
+# Login
+curl -X POST https://your-service.onrender.com/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"securepassword"}'
+```
+
+### Production Checklist
+
+1. **JWT_SECRET**: Strong random value (not default)
+2. **CORS_ALLOWED_ORIGINS**: Your frontend domain(s)
+3. **DB_SSLMODE**: `require` (Render enforces SSL)
+4. **LOG_LEVEL**: `info` or `warn` (not `debug`)
+5. **Health checks**: Monitor `/health/ready`
+6. **Metrics**: Scrape `/metrics` for Prometheus
+
+### Troubleshooting
+
+**Common issues**:
+
+1. **Migration errors**: Check logs for `migration failed`
+   - Solution: Ensure `DATABASE_URL` is correct
+   - Manual migration: Use `scripts/migrate_render.sql` in Render SQL Editor
+
+2. **Port binding**: Render assigns `PORT` env var
+   - Already handled: `config.go:117` reads `PORT` or `SERVER_PORT`
+
+3. **SSL connection**: Render requires SSL
+   - Already handled: `parseDatabaseURL()` sets `sslmode=require` if missing
+
+4. **Build timeout**: Free tier has 15-min build limit
+   - Solution: Upgrade plan or optimize build
+
+5. **Manual migrations**: If auto-migration fails, run SQL manually:
+   - Render Dashboard → Database → SQL Editor
+   - Paste contents of `scripts/migrate_render.sql`
+   - Execute query
+
+### Cost Estimate
+
+- **Free tier**: $0/month (limited hours, 512MB RAM)
+- **Starter web**: $7/month (512MB RAM, always-on)
+- **Starter database**: $7/month (1GB storage, 90 days retention)
+
+For production, use Starter plans for both web service and database.
+
 ## License
 
 This project is licensed under the **GNU Affero General Public License v3.0 (AGPL v3.0)**.
