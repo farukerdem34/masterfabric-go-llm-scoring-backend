@@ -8,6 +8,10 @@
       "headers": {
         "Authorization": "Bearer {env:RENDER_API_KEY}"
       }
+    },
+    "web-llm-scoring-frontend": {
+      "type": "remote",
+      "url": "https://gitmcp.io/farukerdem34/web-llm-scoring.git"
     }
   }
 }
