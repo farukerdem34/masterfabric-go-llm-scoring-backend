@@ -85,6 +85,10 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Set refresh token cookie
+		sameSite := http.SameSiteStrictMode
+		if h.refreshTokenCfg.Secure {
+			sameSite = http.SameSiteNoneMode
+		}
 		http.SetCookie(w, &http.Cookie{
 			Name:     h.refreshTokenCfg.CookieName,
 			Value:    rawRefreshToken,
@@ -92,7 +96,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			MaxAge:   int(h.refreshTokenCfg.Duration.Seconds()),
 			HttpOnly: true,
 			Secure:   h.refreshTokenCfg.Secure,
-			SameSite: http.SameSiteStrictMode,
+			SameSite: sameSite,
 		})
 	}
 
@@ -218,6 +222,10 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set new refresh token cookie
+	sameSite := http.SameSiteStrictMode
+	if h.refreshTokenCfg.Secure {
+		sameSite = http.SameSiteNoneMode
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     h.refreshTokenCfg.CookieName,
 		Value:    result.RefreshToken, // New rotated token
@@ -225,7 +233,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   int(h.refreshTokenCfg.Duration.Seconds()),
 		HttpOnly: true,
 		Secure:   h.refreshTokenCfg.Secure,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: sameSite,
 	})
 
 	response.JSON(w, http.StatusOK, result)
