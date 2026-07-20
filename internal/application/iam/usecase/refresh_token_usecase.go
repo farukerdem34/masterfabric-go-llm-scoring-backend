@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -190,10 +191,23 @@ func hashToken(token string) string {
 // extractIP gets the client IP from X-Forwarded-For or RemoteAddr.
 func extractIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// X-Forwarded-For may contain multiple IPs; take the first one
+		if idx := strings.Index(xff, ","); idx != -1 {
+			return strings.TrimSpace(xff[:idx])
+		}
 		return xff
 	}
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
 		return xri
 	}
-	return r.RemoteAddr
+	// RemoteAddr is in "ip:port" format; extract just the IP
+	addr := r.RemoteAddr
+	if idx := strings.LastIndex(addr, ":"); idx != -1 {
+		ip := addr[:idx]
+		// Strip brackets for IPv6
+		ip = strings.TrimPrefix(ip, "[")
+		ip = strings.TrimSuffix(ip, "]")
+		return ip
+	}
+	return addr
 }

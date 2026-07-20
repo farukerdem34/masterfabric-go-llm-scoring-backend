@@ -7,7 +7,7 @@ CREATE TABLE refresh_tokens (
     expires_at    TIMESTAMPTZ NOT NULL,
     revoked_at    TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    ip_address    INET,
+    ip_address    TEXT,
     user_agent    TEXT
 );
 

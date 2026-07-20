@@ -111,15 +111,15 @@ func New(deps Dependencies) *chi.Mux {
 				r.Use(middleware.TenantResolverWithWorkspace(deps.OrgRepo, deps.WorkspaceRepo))
 			}
 
-			// WebSocket endpoint (before gateway pipeline — upgrade requests are not HTTP proxy)
-			if deps.RealtimeHandler != nil {
-				r.Get("/ws", deps.RealtimeHandler.Connect)
-			}
-
 			// Gateway pipeline (rate limiting, permission enforcement for managed endpoints)
 			// Must be applied before specific routes so it can handle dynamic endpoints
 			if deps.GatewayPipeline != nil {
 				r.Use(deps.GatewayPipeline.Enforce)
+			}
+
+			// WebSocket endpoint (after gateway pipeline — upgrade requests are not HTTP proxy)
+			if deps.RealtimeHandler != nil {
+				r.Get("/ws", deps.RealtimeHandler.Connect)
 			}
 
 			// User routes
