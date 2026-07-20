@@ -49,7 +49,7 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 	healthy := true
 
 	// Check Postgres
-	if h.db != nil {
+	if h.db != nil && !reflect.ValueOf(h.db).IsNil() {
 		if err := h.db.Ping(ctx); err != nil {
 			slog.Error("readiness check failed", "service", "postgres", "error", err)
 			services["postgres"] = "unhealthy"
