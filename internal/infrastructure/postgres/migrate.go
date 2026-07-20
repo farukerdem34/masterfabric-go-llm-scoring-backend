@@ -15,7 +15,15 @@ import (
 var migrationsFS embed.FS
 
 // RunMigrations applies all pending SQL migrations from the embedded migrations/ directory.
-func RunMigrations(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) error {
+// Set force=true to drop schema_migrations and re-apply all (use when tables were lost).
+func RunMigrations(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger, force bool) error {
+	if force {
+		log.Warn("force migration: dropping schema_migrations table")
+		if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS schema_migrations"); err != nil {
+			return fmt.Errorf("drop schema_migrations: %w", err)
+		}
+	}
+
 	if _, err := pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			filename VARCHAR(255) PRIMARY KEY,
@@ -80,13 +88,21 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) er
 }
 
 func stripGooseDirectives(sql string) string {
-	var lines []string
+	var upLines []string
+	inUp := false
 	for _, line := range strings.Split(sql, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "-- +goose") {
+		if trimmed == "-- +goose Up" {
+			inUp = true
 			continue
 		}
-		lines = append(lines, line)
+		if trimmed == "-- +goose Down" {
+			inUp = false
+			continue
+		}
+		if inUp {
+			upLines = append(upLines, line)
+		}
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(upLines, "\n")
 }

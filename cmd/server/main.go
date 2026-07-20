@@ -95,7 +95,8 @@ func run() error {
 		log.Info("connected to postgres")
 
 		// Run database migrations automatically
-		if err := infraPostgres.RunMigrations(ctx, db, log); err != nil {
+		forceMigrate := os.Getenv("FORCE_MIGRATE") == "true"
+		if err := infraPostgres.RunMigrations(ctx, db, log, forceMigrate); err != nil {
 			log.Error("migration failed", "error", err)
 			os.Exit(1)
 		}
