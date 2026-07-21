@@ -227,6 +227,17 @@ func (h *Hub) removeClient(c *client) {
 			delete(members, c.id)
 			if len(members) == 0 {
 				delete(h.rooms, room)
+				// Clean up reverse index
+				_, _, channel, err := model.ParseRoomKey(room)
+				if err == nil {
+					orgKey := c.info.OrganizationID.String() + ":" + channel
+					if rooms, ok := h.orgChannels[orgKey]; ok {
+						delete(rooms, room)
+						if len(rooms) == 0 {
+							delete(h.orgChannels, orgKey)
+						}
+					}
+				}
 			}
 		}
 	}
