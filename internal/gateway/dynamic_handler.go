@@ -260,7 +260,7 @@ func (r *DynamicHandlerResolver) handleGeneric(ctx context.Context, endpoint *mo
 	// Parse request body if present
 	var requestData map[string]interface{}
 	if req.Body != nil && req.Method != "GET" && req.Method != "DELETE" {
-		bodyBytes, err := io.ReadAll(req.Body)
+		bodyBytes, err := io.ReadAll(io.LimitReader(req.Body, 1<<20))
 		if err == nil && len(bodyBytes) > 0 {
 			_ = json.Unmarshal(bodyBytes, &requestData)
 		}
@@ -347,18 +347,14 @@ func (r *DynamicHandlerResolver) handleList(ctx context.Context, tableName strin
 	}
 	defer rows.Close()
 
-	// Convert rows to JSON
-	var records []map[string]interface{}
+	// Collect raw JSON records — json.Marshal handles RawMessage without re-parsing
+	records := make([]json.RawMessage, 0, limit)
 	for rows.Next() {
 		var jsonData []byte
 		if err := rows.Scan(&jsonData); err != nil {
 			return nil, 0, fmt.Errorf("failed to scan row: %w", err)
 		}
-		var record map[string]interface{}
-		if err := json.Unmarshal(jsonData, &record); err != nil {
-			return nil, 0, fmt.Errorf("failed to parse record: %w", err)
-		}
-		records = append(records, record)
+		records = append(records, jsonData)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("failed to iterate rows: %w", err)
@@ -394,12 +390,7 @@ func (r *DynamicHandlerResolver) handleGet(ctx context.Context, tableName string
 		return nil, 0, fmt.Errorf("failed to get record: %w", err)
 	}
 
-	var record map[string]interface{}
-	if err := json.Unmarshal(jsonData, &record); err != nil {
-		return nil, 0, fmt.Errorf("failed to parse record: %w", err)
-	}
-
-	return map[string]interface{}{"data": record}, http.StatusOK, nil
+	return map[string]interface{}{"data": json.RawMessage(jsonData)}, http.StatusOK, nil
 }
 
 // handleCreate performs INSERT operation.
@@ -436,12 +427,7 @@ func (r *DynamicHandlerResolver) handleCreate(ctx context.Context, tableName str
 		return nil, 0, fmt.Errorf("failed to create record: %w", err)
 	}
 
-	var record map[string]interface{}
-	if err := json.Unmarshal(jsonData, &record); err != nil {
-		return nil, 0, fmt.Errorf("failed to parse record: %w", err)
-	}
-
-	return map[string]interface{}{"data": record}, http.StatusCreated, nil
+	return map[string]interface{}{"data": json.RawMessage(jsonData)}, http.StatusCreated, nil
 }
 
 // handleUpdate performs UPDATE operation.
@@ -482,12 +468,7 @@ func (r *DynamicHandlerResolver) handleUpdate(ctx context.Context, tableName str
 		return nil, 0, fmt.Errorf("failed to update record: %w", err)
 	}
 
-	var record map[string]interface{}
-	if err := json.Unmarshal(jsonData, &record); err != nil {
-		return nil, 0, fmt.Errorf("failed to parse record: %w", err)
-	}
-
-	return map[string]interface{}{"data": record}, http.StatusOK, nil
+	return map[string]interface{}{"data": json.RawMessage(jsonData)}, http.StatusOK, nil
 }
 
 // handleDelete performs DELETE operation.
