@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 	tenantRepo "github.com/masterfabric-go/masterfabric/internal/domain/tenant/repository"
@@ -26,6 +27,7 @@ func TenantResolver(orgRepo tenantRepo.OrgRepository) func(http.Handler) http.Ha
 
 // TenantResolverWithWorkspace resolves tenant and workspace from the request.
 func TenantResolverWithWorkspace(orgRepo tenantRepo.OrgRepository, workspaceRepo tenantRepo.WorkspaceRepository) func(http.Handler) http.Handler {
+	var workspaceCache sync.Map // key: "orgID:slug" -> value: uuid.UUID
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
@@ -81,8 +83,12 @@ func TenantResolverWithWorkspace(orgRepo tenantRepo.OrgRepository, workspaceRepo
 					// 2. Check workspace slug header (requires org context)
 					if workspaceID == uuid.Nil {
 						if slug := r.Header.Get("X-Workspace-Slug"); slug != "" {
-							if ws, err := workspaceRepo.GetBySlug(ctx, orgID, slug); err == nil && ws != nil {
+							cacheKey := orgID.String() + ":" + slug
+							if cachedID, ok := workspaceCache.Load(cacheKey); ok {
+								workspaceID = cachedID.(uuid.UUID)
+							} else if ws, err := workspaceRepo.GetBySlug(ctx, orgID, slug); err == nil && ws != nil {
 								workspaceID = ws.ID
+								workspaceCache.Store(cacheKey, ws.ID)
 							}
 						}
 					}
