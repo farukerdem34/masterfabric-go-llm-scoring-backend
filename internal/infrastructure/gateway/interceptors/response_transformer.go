@@ -52,7 +52,7 @@ func (rt *ResponseTransformer) InterceptResponse(ctx context.Context, req *http.
 
 	// Transform body if function provided
 	if rt.bodyTransform != nil && resp.Body != nil {
-		body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1MB max
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxInterceptorBodySize)) // 1MB max
 		if err != nil {
 			return nil, fmt.Errorf("failed to read response body: %w", err)
 		}

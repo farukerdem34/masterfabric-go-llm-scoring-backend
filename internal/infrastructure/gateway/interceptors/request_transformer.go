@@ -11,6 +11,8 @@ import (
 	ctxKeys "github.com/masterfabric-go/masterfabric/internal/shared/context"
 )
 
+const maxInterceptorBodySize = 1 << 20 // 1 MiB
+
 // RequestTransformer transforms request headers, query params, and body.
 type RequestTransformer struct {
 	headerTransforms map[string]string // Header name -> value or template
@@ -51,7 +53,7 @@ func (rt *RequestTransformer) InterceptRequest(ctx context.Context, req *http.Re
 
 	// Transform body if function provided
 	if rt.bodyTransform != nil && req.Body != nil {
-		body, err := io.ReadAll(io.LimitReader(req.Body, 1<<20)) // 1MB max
+		body, err := io.ReadAll(io.LimitReader(req.Body, maxInterceptorBodySize)) // 1MB max
 		if err != nil {
 			return nil, fmt.Errorf("failed to read request body: %w", err)
 		}

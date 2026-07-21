@@ -39,7 +39,7 @@ func (s *SchemaValidator) InterceptRequest(ctx context.Context, req *http.Reques
 	}
 
 	// Read request body
-	body, err := io.ReadAll(io.LimitReader(req.Body, 1<<20)) // 1MB max
+	body, err := io.ReadAll(io.LimitReader(req.Body, maxInterceptorBodySize)) // 1MB max
 	if err != nil {
 		return nil, fmt.Errorf("failed to read request body: %w", err)
 	}
