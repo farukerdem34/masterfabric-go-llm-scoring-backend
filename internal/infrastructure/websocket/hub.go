@@ -18,6 +18,7 @@ type Hub struct {
 	mu             sync.RWMutex
 	clients        map[string]*client
 	rooms          map[model.RoomKey]map[string]*client
+	orgChannels    map[string]map[model.RoomKey]bool
 	closed         bool
 }
 
@@ -31,6 +32,7 @@ func NewHub(logger *slog.Logger, maxConnections int) *Hub {
 		maxConnections: maxConnections,
 		clients:        make(map[string]*client),
 		rooms:          make(map[model.RoomKey]map[string]*client),
+		orgChannels:    make(map[string]map[model.RoomKey]bool),
 	}
 }
 
@@ -126,13 +128,10 @@ func (h *Hub) BroadcastToOrganization(orgID uuid.UUID, channel string, payload [
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	prefix := "org:" + orgID.String() + ":app:"
-	suffix := ":channel:" + channel
-	for room := range h.rooms {
-		key := string(room)
-		if len(key) > len(prefix)+len(suffix) && key[:len(prefix)] == prefix && key[len(key)-len(suffix):] == suffix {
-			h.broadcastLocked(room, payload)
-		}
+	orgKey := orgID.String() + ":" + channel
+	rooms := h.orgChannels[orgKey]
+	for room := range rooms {
+		h.broadcastLocked(room, payload)
 	}
 }
 
@@ -173,6 +172,7 @@ func (h *Hub) Close(ctx context.Context) error {
 	}
 	h.clients = make(map[string]*client)
 	h.rooms = make(map[model.RoomKey]map[string]*client)
+	h.orgChannels = make(map[string]map[model.RoomKey]bool)
 	return nil
 }
 
@@ -182,6 +182,15 @@ func (h *Hub) addToRoomLocked(c *client, room model.RoomKey) {
 	}
 	h.rooms[room][c.id] = c
 	c.subscribe(room)
+
+	_, _, channel, err := model.ParseRoomKey(room)
+	if err == nil {
+		orgKey := c.info.OrganizationID.String() + ":" + channel
+		if h.orgChannels[orgKey] == nil {
+			h.orgChannels[orgKey] = make(map[model.RoomKey]bool)
+		}
+		h.orgChannels[orgKey][room] = true
+	}
 }
 
 func (h *Hub) removeFromRoomLocked(c *client, room model.RoomKey) {
@@ -189,6 +198,17 @@ func (h *Hub) removeFromRoomLocked(c *client, room model.RoomKey) {
 		delete(members, c.id)
 		if len(members) == 0 {
 			delete(h.rooms, room)
+
+			_, _, channel, err := model.ParseRoomKey(room)
+			if err == nil {
+				orgKey := c.info.OrganizationID.String() + ":" + channel
+				if rooms, ok := h.orgChannels[orgKey]; ok {
+					delete(rooms, room)
+					if len(rooms) == 0 {
+						delete(h.orgChannels, orgKey)
+					}
+				}
+			}
 		}
 	}
 	c.unsubscribe(room)
