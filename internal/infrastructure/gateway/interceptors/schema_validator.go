@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 
+	ctxKeys "github.com/masterfabric-go/masterfabric/internal/shared/context"
 	"github.com/xeipuuv/gojsonschema"
 )
 
@@ -26,7 +27,7 @@ func NewSchemaValidator() *SchemaValidator {
 // InterceptRequest validates the request body against the provided schema.
 func (s *SchemaValidator) InterceptRequest(ctx context.Context, req *http.Request) (*http.Request, error) {
 	// Get schema from context (set by gateway pipeline)
-	schemaJSON, ok := ctx.Value("endpoint_schema").([]byte)
+	schemaJSON, ok := ctx.Value(ctxKeys.KeyEndpointSchema).([]byte)
 	if !ok || len(schemaJSON) == 0 {
 		// No schema defined, skip validation
 		return req, nil

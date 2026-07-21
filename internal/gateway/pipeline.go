@@ -13,6 +13,7 @@ import (
 	"github.com/masterfabric-go/masterfabric/internal/domain/apimanagement/repository"
 	gatewayDomain "github.com/masterfabric-go/masterfabric/internal/domain/gateway"
 	iamService "github.com/masterfabric-go/masterfabric/internal/domain/iam/service"
+	ctxKeys "github.com/masterfabric-go/masterfabric/internal/shared/context"
 	"github.com/masterfabric-go/masterfabric/internal/shared/middleware"
 	"github.com/masterfabric-go/masterfabric/internal/shared/response"
 	"github.com/redis/go-redis/v9"
@@ -144,15 +145,15 @@ func (p *Pipeline) Enforce(next http.Handler) http.Handler {
 		}
 
 		// 6. Prepare context for interceptors
-		ctx = context.WithValue(ctx, "endpoint_schema", endpoint.Schema)
-		ctx = context.WithValue(ctx, "pii_masking", endpoint.PIIMasking)
-		ctx = context.WithValue(ctx, "endpoint_id", endpoint.ID.String())
-		ctx = context.WithValue(ctx, "app_id", appID.String())
+		ctx = context.WithValue(ctx, ctxKeys.KeyEndpointSchema, endpoint.Schema)
+		ctx = context.WithValue(ctx, ctxKeys.KeyPIIMasking, endpoint.PIIMasking)
+		ctx = context.WithValue(ctx, ctxKeys.KeyEndpointID, endpoint.ID.String())
+		ctx = context.WithValue(ctx, ctxKeys.KeyAppID, appID.String())
 		if orgID, ok := middleware.OrgIDFromContext(ctx); ok {
-			ctx = context.WithValue(ctx, "org_id", orgID.String())
+			ctx = context.WithValue(ctx, ctxKeys.KeyOrgID, orgID.String())
 		}
 		if userID, ok := middleware.UserIDFromContext(ctx); ok {
-			ctx = context.WithValue(ctx, "user_id", userID.String())
+			ctx = context.WithValue(ctx, ctxKeys.KeyUserID, userID.String())
 		}
 		r = r.WithContext(ctx)
 

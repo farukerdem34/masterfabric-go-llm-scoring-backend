@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	ctxKeys "github.com/masterfabric-go/masterfabric/internal/shared/context"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -64,7 +65,7 @@ func TestSchemaValidator_InterceptRequest(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			if tt.schema != nil {
-				ctx = context.WithValue(ctx, "endpoint_schema", tt.schema)
+				ctx = context.WithValue(ctx, ctxKeys.KeyEndpointSchema, tt.schema)
 			}
 
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost, "/test", bytes.NewReader(tt.body))
@@ -89,7 +90,7 @@ func TestSchemaValidator_InterceptRequest_GET_ShouldSkip(t *testing.T) {
 	validator := NewSchemaValidator()
 	schema := []byte(`{"type": "object"}`)
 
-	ctx := context.WithValue(context.Background(), "endpoint_schema", schema)
+	ctx := context.WithValue(context.Background(), ctxKeys.KeyEndpointSchema, schema)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/test", nil)
 	require.NoError(t, err)
 

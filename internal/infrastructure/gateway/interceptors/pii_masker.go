@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+
+	ctxKeys "github.com/masterfabric-go/masterfabric/internal/shared/context"
 )
 
 // PIIMasker masks sensitive fields in request/response bodies.
@@ -38,7 +40,7 @@ func NewPIIMasker(maskFields []string, maskValue string) *PIIMasker {
 // InterceptRequest masks PII in request body if PII masking is enabled.
 func (p *PIIMasker) InterceptRequest(ctx context.Context, req *http.Request) (*http.Request, error) {
 	// Check if PII masking is enabled for this endpoint
-	maskPII, ok := ctx.Value("pii_masking").(bool)
+	maskPII, ok := ctx.Value(ctxKeys.KeyPIIMasking).(bool)
 	if !ok || !maskPII {
 		return req, nil
 	}
@@ -76,7 +78,7 @@ func (p *PIIMasker) InterceptRequest(ctx context.Context, req *http.Request) (*h
 // InterceptResponse masks PII in response body if PII masking is enabled.
 func (p *PIIMasker) InterceptResponse(ctx context.Context, req *http.Request, resp *http.Response) (*http.Response, error) {
 	// Check if PII masking is enabled for this endpoint
-	maskPII, ok := ctx.Value("pii_masking").(bool)
+	maskPII, ok := ctx.Value(ctxKeys.KeyPIIMasking).(bool)
 	if !ok || !maskPII {
 		return resp, nil
 	}

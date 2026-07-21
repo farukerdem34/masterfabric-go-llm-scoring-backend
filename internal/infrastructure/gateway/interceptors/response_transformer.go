@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	ctxKeys "github.com/masterfabric-go/masterfabric/internal/shared/context"
 )
 
 // ResponseTransformer transforms response headers, status code, and body.
@@ -75,13 +77,13 @@ func (rt *ResponseTransformer) transformTemplate(template string, req *http.Requ
 	ctx := req.Context()
 
 	// Replace common variables
-	if orgID, ok := ctx.Value("org_id").(string); ok {
+	if orgID, ok := ctx.Value(ctxKeys.KeyOrgID).(string); ok {
 		result = strings.ReplaceAll(result, "{org_id}", orgID)
 	}
-	if userID, ok := ctx.Value("user_id").(string); ok {
+	if userID, ok := ctx.Value(ctxKeys.KeyUserID).(string); ok {
 		result = strings.ReplaceAll(result, "{user_id}", userID)
 	}
-	if appID, ok := ctx.Value("app_id").(string); ok {
+	if appID, ok := ctx.Value(ctxKeys.KeyAppID).(string); ok {
 		result = strings.ReplaceAll(result, "{app_id}", appID)
 	}
 
