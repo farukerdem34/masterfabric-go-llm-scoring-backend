@@ -9,12 +9,17 @@
 # Single test
 go test -run TestName ./path/to/package/...
 
-# Lint & vet
-golangci-lint run ./...
-go vet ./...
+# Full lint pipeline (format + vet + golangci-lint)
+./scripts/lint.sh
+gofmt -w .                     # Format all Go files
+
+# Security scans
+go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+go run github.com/securego/gosec/v2/cmd/gosec@latest -quiet ./...
 
 # Build
-go build -o bin/server ./cmd/server
+make build                      # Output: bin/masterfabric
+make docker-build               # Docker image via deployments/Dockerfile
 ```
 
 ## Architecture Gotchas
@@ -57,6 +62,7 @@ scripts/                     # test.sh, lint.sh, seed.go, migrate.sh
 
 - Hot-reload uses `air` (installed automatically by `dev.sh`).
 - `dev.sh` starts Docker services, waits for health, runs migrations, starts hot-reload server.
+- `dev.sh` explicitly sets `KAFKA_ENABLED=true` (default is `false`; production uses in-process event bus).
 - Server runs on `:8080`, Kafka UI on `:8090`.
 - Environment variables control all config (see README for full list).
 
