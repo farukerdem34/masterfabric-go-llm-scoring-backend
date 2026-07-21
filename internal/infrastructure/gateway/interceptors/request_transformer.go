@@ -51,7 +51,7 @@ func (rt *RequestTransformer) InterceptRequest(ctx context.Context, req *http.Re
 
 	// Transform body if function provided
 	if rt.bodyTransform != nil && req.Body != nil {
-		body, err := io.ReadAll(req.Body)
+		body, err := io.ReadAll(io.LimitReader(req.Body, 1<<20)) // 1MB max
 		if err != nil {
 			return nil, fmt.Errorf("failed to read request body: %w", err)
 		}
