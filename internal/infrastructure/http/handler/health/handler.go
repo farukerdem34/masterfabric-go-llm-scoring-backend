@@ -5,7 +5,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"reflect"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/masterfabric-go/masterfabric/internal/shared/response"
@@ -49,7 +48,7 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 	healthy := true
 
 	// Check Postgres
-	if h.db != nil && !reflect.ValueOf(h.db).IsNil() {
+	if h.db != nil {
 		if err := h.db.Ping(ctx); err != nil {
 			slog.Error("readiness check failed", "service", "postgres", "error", err)
 			services["postgres"] = "unhealthy"
@@ -60,7 +59,7 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check Redis
-	if h.redis != nil && !reflect.ValueOf(h.redis).IsNil() {
+	if h.redis != nil {
 		if err := h.redis.Ping(ctx).Err(); err != nil {
 			slog.Error("readiness check failed", "service", "redis", "error", err)
 			services["redis"] = "unhealthy"
