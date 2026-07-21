@@ -17,6 +17,8 @@ func NewPostgresPool(ctx context.Context, cfg config.DatabaseConfig) (*pgxpool.P
 
 	poolCfg.MaxConns = cfg.MaxConns
 	poolCfg.MinConns = cfg.MinConns
+	poolCfg.MaxConnLifetime = cfg.ConnMaxLifetime
+	poolCfg.MaxConnIdleTime = cfg.ConnMaxIdleTime
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {

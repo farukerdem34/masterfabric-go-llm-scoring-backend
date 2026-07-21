@@ -2,7 +2,9 @@ package config
 
 import (
 	"os"
+	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -74,4 +76,42 @@ func TestDatabaseConfig_DSN_EscapesSpecialCharacters(t *testing.T) {
 func TestRedisConfig_Addr(t *testing.T) {
 	cfg := RedisConfig{Host: "redis.local", Port: 6380}
 	assert.Equal(t, "redis.local:6380", cfg.Addr())
+}
+
+func TestLoad_DatabaseConnPoolDefaults(t *testing.T) {
+	cfg := Load()
+	assert.Equal(t, 1*time.Hour, cfg.Database.ConnMaxLifetime)
+	assert.Equal(t, 30*time.Minute, cfg.Database.ConnMaxIdleTime)
+}
+
+func TestLoad_DatabaseConnPoolOverrides(t *testing.T) {
+	os.Setenv("DB_CONN_MAX_LIFETIME_SECONDS", "7200")
+	os.Setenv("DB_CONN_MAX_IDLE_TIME_SECONDS", "600")
+	defer os.Unsetenv("DB_CONN_MAX_LIFETIME_SECONDS")
+	defer os.Unsetenv("DB_CONN_MAX_IDLE_TIME_SECONDS")
+
+	cfg := Load()
+	assert.Equal(t, 2*time.Hour, cfg.Database.ConnMaxLifetime)
+	assert.Equal(t, 10*time.Minute, cfg.Database.ConnMaxIdleTime)
+}
+
+func TestLoad_RedisPoolDefaults(t *testing.T) {
+	cfg := Load()
+	assert.Equal(t, 10*runtime.GOMAXPROCS(0), cfg.Redis.PoolSize)
+	assert.Equal(t, 5, cfg.Redis.MinIdleConns)
+	assert.Equal(t, 5*time.Minute, cfg.Redis.ConnMaxIdleTime)
+}
+
+func TestLoad_RedisPoolOverrides(t *testing.T) {
+	os.Setenv("REDIS_POOL_SIZE", "20")
+	os.Setenv("REDIS_MIN_IDLE_CONNS", "10")
+	os.Setenv("REDIS_CONN_MAX_IDLE_TIME_SECONDS", "600")
+	defer os.Unsetenv("REDIS_POOL_SIZE")
+	defer os.Unsetenv("REDIS_MIN_IDLE_CONNS")
+	defer os.Unsetenv("REDIS_CONN_MAX_IDLE_TIME_SECONDS")
+
+	cfg := Load()
+	assert.Equal(t, 20, cfg.Redis.PoolSize)
+	assert.Equal(t, 10, cfg.Redis.MinIdleConns)
+	assert.Equal(t, 10*time.Minute, cfg.Redis.ConnMaxIdleTime)
 }

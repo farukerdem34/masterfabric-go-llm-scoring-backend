@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -43,14 +44,16 @@ type ServerConfig struct {
 
 // DatabaseConfig holds PostgreSQL connection settings.
 type DatabaseConfig struct {
-	Host     string
-	Port     int
-	User     string
-	Password string
-	DBName   string
-	SSLMode  string
-	MaxConns int32
-	MinConns int32
+	Host            string
+	Port            int
+	User            string
+	Password        string
+	DBName          string
+	SSLMode         string
+	MaxConns        int32
+	MinConns        int32
+	ConnMaxLifetime time.Duration
+	ConnMaxIdleTime time.Duration
 }
 
 // DSN returns the PostgreSQL connection string with escaped credentials.
@@ -67,10 +70,13 @@ func (d DatabaseConfig) DSN() string {
 
 // RedisConfig holds Redis connection settings.
 type RedisConfig struct {
-	Host     string
-	Port     int
-	Password string
-	DB       int
+	Host            string
+	Port            int
+	Password        string
+	DB              int
+	PoolSize        int
+	MinIdleConns    int
+	ConnMaxIdleTime time.Duration
 }
 
 // Addr returns the Redis address string.
@@ -123,10 +129,13 @@ func Load() *Config {
 		},
 		Database: loadDatabaseConfig(),
 		Redis: RedisConfig{
-			Host:     envOrDefault("REDIS_HOST", "localhost"),
-			Port:     envOrDefaultInt("REDIS_PORT", 6379),
-			Password: envOrDefault("REDIS_PASSWORD", ""),
-			DB:       envOrDefaultInt("REDIS_DB", 0),
+			Host:            envOrDefault("REDIS_HOST", "localhost"),
+			Port:            envOrDefaultInt("REDIS_PORT", 6379),
+			Password:        envOrDefault("REDIS_PASSWORD", ""),
+			DB:              envOrDefaultInt("REDIS_DB", 0),
+			PoolSize:        envOrDefaultInt("REDIS_POOL_SIZE", 10*runtime.GOMAXPROCS(0)),
+			MinIdleConns:    envOrDefaultInt("REDIS_MIN_IDLE_CONNS", 5),
+			ConnMaxIdleTime: time.Duration(envOrDefaultInt("REDIS_CONN_MAX_IDLE_TIME_SECONDS", 300)) * time.Second,
 		},
 		JWT: JWTConfig{
 			Secret:          envOrDefault("JWT_SECRET", "change-me-in-production"),
@@ -168,14 +177,16 @@ func loadDatabaseConfig() DatabaseConfig {
 		return parseDatabaseURL(dbURL)
 	}
 	return DatabaseConfig{
-		Host:     envOrDefault("DB_HOST", "localhost"),
-		Port:     envOrDefaultInt("DB_PORT", 5432),
-		User:     envOrDefault("DB_USER", "masterfabric"),
-		Password: envOrDefault("DB_PASSWORD", "masterfabric"),
-		DBName:   envOrDefault("DB_NAME", "masterfabric"),
-		SSLMode:  envOrDefault("DB_SSLMODE", "disable"),
-		MaxConns: envOrDefaultInt32("DB_MAX_CONNS", 25),
-		MinConns: envOrDefaultInt32("DB_MIN_CONNS", 5),
+		Host:            envOrDefault("DB_HOST", "localhost"),
+		Port:            envOrDefaultInt("DB_PORT", 5432),
+		User:            envOrDefault("DB_USER", "masterfabric"),
+		Password:        envOrDefault("DB_PASSWORD", "masterfabric"),
+		DBName:          envOrDefault("DB_NAME", "masterfabric"),
+		SSLMode:         envOrDefault("DB_SSLMODE", "disable"),
+		MaxConns:        envOrDefaultInt32("DB_MAX_CONNS", 25),
+		MinConns:        envOrDefaultInt32("DB_MIN_CONNS", 5),
+		ConnMaxLifetime: time.Duration(envOrDefaultInt("DB_CONN_MAX_LIFETIME_SECONDS", 3600)) * time.Second,
+		ConnMaxIdleTime: time.Duration(envOrDefaultInt("DB_CONN_MAX_IDLE_TIME_SECONDS", 1800)) * time.Second,
 	}
 }
 
@@ -211,14 +222,16 @@ func parseDatabaseURL(dbURL string) DatabaseConfig {
 	}
 
 	return DatabaseConfig{
-		Host:     host,
-		Port:     port,
-		User:     user,
-		Password: password,
-		DBName:   dbName,
-		SSLMode:  sslmode,
-		MaxConns: envOrDefaultInt32("DB_MAX_CONNS", 25),
-		MinConns: envOrDefaultInt32("DB_MIN_CONNS", 5),
+		Host:            host,
+		Port:            port,
+		User:            user,
+		Password:        password,
+		DBName:          dbName,
+		SSLMode:         sslmode,
+		MaxConns:        envOrDefaultInt32("DB_MAX_CONNS", 25),
+		MinConns:        envOrDefaultInt32("DB_MIN_CONNS", 5),
+		ConnMaxLifetime: time.Duration(envOrDefaultInt("DB_CONN_MAX_LIFETIME_SECONDS", 3600)) * time.Second,
+		ConnMaxIdleTime: time.Duration(envOrDefaultInt("DB_CONN_MAX_IDLE_TIME_SECONDS", 1800)) * time.Second,
 	}
 }
 
