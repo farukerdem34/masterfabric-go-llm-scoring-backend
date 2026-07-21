@@ -52,7 +52,7 @@ func (p *PIIMasker) InterceptRequest(ctx context.Context, req *http.Request) (*h
 		return req, nil
 	}
 
-	body, err := io.ReadAll(req.Body)
+	body, err := io.ReadAll(io.LimitReader(req.Body, 1<<20))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read request body: %w", err)
 	}
@@ -85,7 +85,7 @@ func (p *PIIMasker) InterceptResponse(ctx context.Context, req *http.Request, re
 		return resp, nil
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
@@ -134,9 +134,10 @@ func (p *PIIMasker) maskMap(m map[string]interface{}) {
 		if nestedMap, ok := value.(map[string]interface{}); ok {
 			p.maskMap(nestedMap)
 		} else if nestedSlice, ok := value.([]interface{}); ok {
-			for _, item := range nestedSlice {
+			for i, item := range nestedSlice {
 				if nestedMap, ok := item.(map[string]interface{}); ok {
 					p.maskMap(nestedMap)
+					nestedSlice[i] = nestedMap
 				}
 			}
 		}
