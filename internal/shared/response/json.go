@@ -13,7 +13,13 @@ func JSON(w http.ResponseWriter, status int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if payload != nil {
-		_ = json.NewEncoder(w).Encode(payload)
+		data, err := json.Marshal(payload)
+		if err != nil {
+			slog.Error("failed to marshal JSON response", "error", err)
+			http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(data)
 	}
 }
 
