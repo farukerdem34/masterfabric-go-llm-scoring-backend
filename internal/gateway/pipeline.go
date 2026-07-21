@@ -248,7 +248,7 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return rw.ResponseWriter.Write(b)
 }
 
-// checkRateLimit uses a Redis sliding window counter.
+// checkRateLimit uses a Redis Lua script for atomic rate limiting.
 func (p *Pipeline) checkRateLimit(r *http.Request, appID, endpointID uuid.UUID, limit int) error {
 	ctx := r.Context()
 	key := fmt.Sprintf("rate:%s:%s", appID, endpointID)
