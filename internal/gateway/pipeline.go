@@ -253,17 +253,30 @@ func (p *Pipeline) checkRateLimit(r *http.Request, appID, endpointID uuid.UUID, 
 	ctx := r.Context()
 	key := fmt.Sprintf("rate:%s:%s", appID, endpointID)
 
-	count, err := p.redis.Incr(ctx, key).Result()
+	const rateLimitScript = `
+		local key = KEYS[1]
+		local limit = tonumber(ARGV[1])
+		local window = tonumber(ARGV[2])
+
+		local current = tonumber(redis.call('GET', key) or "0")
+		if current >= limit then
+			return -1
+		end
+
+		current = redis.call('INCR', key)
+		if current == 1 then
+			redis.call('EXPIRE', key, window)
+		end
+
+		return current
+	`
+
+	result, err := p.redis.Eval(ctx, rateLimitScript, []string{key}, limit, 60).Int64()
 	if err != nil {
-		return err
+		return fmt.Errorf("rate limit check failed: %w", err)
 	}
 
-	if count == 1 {
-		// Set TTL on first request in the window (1 minute window)
-		p.redis.Expire(ctx, key, 60_000_000_000) // 60 seconds in nanoseconds
-	}
-
-	if count > int64(limit) {
+	if result == -1 {
 		return fmt.Errorf("rate limit exceeded")
 	}
 
