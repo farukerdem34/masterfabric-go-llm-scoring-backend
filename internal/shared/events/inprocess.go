@@ -73,10 +73,16 @@ func (b *InProcessBus) dispatch() {
 		handlers := b.handlers[env.topic]
 		b.mu.RUnlock()
 
+		var wg sync.WaitGroup
 		for _, h := range handlers {
-			if err := h(env.ctx, env.event); err != nil {
-				b.logger.Error("in-process handler error", "topic", env.topic, "error", err)
-			}
+			wg.Add(1)
+			go func(handler Handler) {
+				defer wg.Done()
+				if err := handler(env.ctx, env.event); err != nil {
+					b.logger.Error("in-process handler error", "topic", env.topic, "error", err)
+				}
+			}(h)
 		}
+		wg.Wait()
 	}
 }
