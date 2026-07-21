@@ -68,7 +68,7 @@ func (r *UsageStatRepo) ListByUser(ctx context.Context, userID uuid.UUID, filter
 	}
 	defer rows.Close()
 
-	var stats []*model.UsageStat
+	stats := make([]*model.UsageStat, 0, perPage)
 	for rows.Next() {
 		var s model.UsageStat
 		if err := rows.Scan(&s.ID, &s.UserID, &s.ModelID, &s.TokenCount, &s.FirstTokenTimeMs, &s.InferenceTimeMs, &s.TokensPerSecond, &s.CreatedAt); err != nil {
@@ -134,8 +134,8 @@ func (r *UsageStatRepo) GetSummaryByUser(ctx context.Context, userID uuid.UUID, 
 }
 
 func (r *UsageStatRepo) buildWhereClause(userID uuid.UUID, filter repository.UsageStatFilter) (string, []interface{}) {
-	var conditions []string
-	var args []interface{}
+	conditions := make([]string, 0, 4)
+	args := make([]interface{}, 0, 4)
 	argIdx := 1
 
 	conditions = append(conditions, fmt.Sprintf("user_id = $%d", argIdx))
