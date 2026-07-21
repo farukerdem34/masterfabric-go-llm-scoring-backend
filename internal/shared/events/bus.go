@@ -11,6 +11,11 @@ import (
 // Event is a marker interface for domain events.
 type Event interface{}
 
+// TopicNamer is implemented by events that provide their own type name.
+type TopicNamer interface {
+	TopicName() string
+}
+
 // Handler is a function that handles an event.
 type Handler func(ctx context.Context, event Event) error
 

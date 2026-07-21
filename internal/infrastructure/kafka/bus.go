@@ -78,8 +78,12 @@ func deriveEventType(event events.Event) string {
 		return env.Type
 	}
 
-	// Use reflection to get the struct name and convert to dot-notation.
-	// e.g. "UserRegistered" -> "user.registered"
+	// Check if event provides its own type name
+	if tn, ok := event.(events.TopicNamer); ok {
+		return tn.TopicName()
+	}
+
+	// Fallback to reflection for events that don't implement TopicNamer
 	t := reflect.TypeOf(event)
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
